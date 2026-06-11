@@ -6,7 +6,8 @@
   --paper-lit: #fbf2dc;
   --ink: #19231d;
   --ink-2: #2c3a30;
-  --ink-soft: rgba(25, 35, 29, 0.62);
+  /* 0.7 alpha clears WCAG AA (4.5:1) on every paper surface it sits on. */
+  --ink-soft: rgba(25, 35, 29, 0.7);
   --line: rgba(25, 35, 29, 0.16);
   --line-strong: rgba(25, 35, 29, 0.5);
   --orange: #e8472b;
@@ -16,10 +17,8 @@
   --cream: #fffaf0;
   --panel-dark: #141c18;
 
-  --font-display:
-    'Big Shoulders Display', 'Arial Narrow', sans-serif;
-  --font-body:
-    'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
+  --font-body: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'Spline Sans Mono', ui-monospace, monospace;
 
   /* feTurbulence grain, reused by intro + finish atmospheres */
@@ -38,11 +37,17 @@ body,
 
 html {
   scroll-behavior: auto;
+  /* Pull-to-refresh mid-race is the #1 rage-quit. */
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
+  /* Kills iOS double-tap smart zoom mid-race; pan + pinch-zoom (a11y) stay. */
+  touch-action: manipulation;
 }
 
 body {
   margin: 0;
   overflow-x: hidden;
+  overscroll-behavior-y: none;
   background: var(--panel-dark);
   color: var(--ink);
   font-family: var(--font-body);
@@ -52,6 +57,13 @@ body {
 button,
 input {
   font: inherit;
+}
+
+button,
+summary,
+a {
+  /* Removes the double-tap-zoom hesitation when hammering "Run it back". */
+  touch-action: manipulation;
 }
 
 button {
@@ -70,21 +82,22 @@ button {
   position: fixed;
   z-index: 20;
   top: max(10px, env(safe-area-inset-top));
-  right: 12px;
-  left: 12px;
+  right: max(12px, env(safe-area-inset-right));
+  left: max(12px, env(safe-area-inset-left));
   display: grid;
-  grid-template-columns: auto minmax(120px, 1fr) auto;
+  grid-template-columns: auto minmax(100px, 1fr) auto auto;
   gap: 10px;
   align-items: center;
   max-width: 880px;
   margin: 0 auto;
   padding: 9px 10px;
   color: var(--cream);
-  background: rgba(15, 23, 20, 0.92);
+  /* No backdrop-filter: a fixed blur re-samples its backdrop on every
+     scrolled frame for the whole race, and at this alpha it's invisible. */
+  background: rgba(15, 23, 20, 0.96);
   border: 1px solid rgba(249, 245, 232, 0.16);
   border-radius: 14px;
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(14px);
   animation: hudDrop 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -100,7 +113,6 @@ button {
 .introStat,
 .primaryButton,
 .secondaryButton,
-.resetButton,
 .introBoard h2 {
   display: inline-flex;
   gap: 8px;
@@ -133,7 +145,14 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.hudTrack {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
 .hudProgress progress {
+  display: block;
   width: 100%;
   height: 10px;
   overflow: hidden;
@@ -157,10 +176,22 @@ button {
   border-radius: 8px;
 }
 
+/* The ghost's position mirrored onto the progress bar: two dots racing. */
+.hudGhostDot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  background: rgba(249, 245, 232, 0.75);
+  opacity: 0.7;
+  transform: translate(-50%, -50%) rotate(45deg);
+  pointer-events: none;
+}
+
 .hudButton,
 .primaryButton,
-.secondaryButton,
-.resetButton {
+.secondaryButton {
   min-height: 44px;
   border: 0;
   border-radius: 11px;
@@ -187,21 +218,219 @@ button {
   filter: brightness(1.05);
 }
 
+.hudIconButton {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--cream);
+  background: transparent;
+  border: 1px solid rgba(249, 245, 232, 0.25);
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.hudIconButton:hover {
+  background: rgba(249, 245, 232, 0.08);
+}
+
 .hudButton:active,
 .primaryButton:active,
-.secondaryButton:active,
-.resetButton:active {
+.secondaryButton:active {
   transform: translateY(1px) scale(0.99);
 }
 
 .hudButton:focus-visible,
+.hudIconButton:focus-visible,
 .primaryButton:focus-visible,
 .secondaryButton:focus-visible,
-.resetButton:focus-visible,
+.backLink:focus-visible,
+.textButton:focus-visible,
+.soundToggle:focus-visible,
 .saveForm input:focus-visible,
 .calibrate summary:focus-visible {
   outline: 3px solid #2e8bd6;
   outline-offset: 3px;
+}
+
+/* ---------------------------------------------------------- DELTA CHIP --- */
+
+.deltaChip {
+  position: fixed;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 25;
+  padding: 7px 14px;
+  background: rgba(15, 23, 20, 0.92);
+  border: 1px solid rgba(249, 245, 232, 0.16);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.deltaChip.isAhead {
+  color: var(--amber);
+}
+
+.deltaChip.isBehind {
+  color: var(--cream);
+}
+
+/* --------------------------------------------------------- SPEED LINES --- */
+
+/* Parallax wind streaks hugging the screen edges above 8 ft/s. The parent's
+   opacity and the two dash layers' transforms are driven per-frame from the
+   race loop — compositor-only writes, no paint invalidation. The dash
+   periods (220px / 110px) must match SPEED_LAYER_WRAP_* in index.tsx. */
+.speedLines {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 0 16%,
+    transparent 32% 68%,
+    #000 84% 100%
+  );
+  mask-image: linear-gradient(
+    90deg,
+    #000 0 16%,
+    transparent 32% 68%,
+    #000 84% 100%
+  );
+}
+
+.speedLayer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.speedLayer-a {
+  height: calc(100vh + 220px);
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(25, 35, 29, 0.14) 0 130px,
+    transparent 130px 220px
+  );
+  -webkit-mask-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 46px,
+    #000 46px 48px
+  );
+  mask-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 46px,
+    #000 46px 48px
+  );
+}
+
+.speedLayer-b {
+  height: calc(100vh + 110px);
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 250, 240, 0.5) 0 60px,
+    transparent 60px 110px
+  );
+  -webkit-mask-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 23px,
+    #000 23px 24px
+  );
+  mask-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 23px,
+    #000 23px 24px
+  );
+}
+
+/* ----------------------------------------------------- MILESTONE STRIKE --- */
+
+.milestoneToast {
+  position: fixed;
+  top: 38vh;
+  right: 0;
+  left: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  animation: milestonePunch 650ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.milestoneToast span {
+  grid-area: 1 / 1;
+  font-family: var(--font-display);
+  font-size: clamp(4rem, 18vw, 9rem);
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Misregistered print: a solid orange pass slipping under an ink outline. */
+.milestoneToastBack {
+  color: var(--orange);
+  transform: translate(4px, 4px);
+}
+
+.milestoneToastFront {
+  color: transparent;
+  -webkit-text-stroke: 2.5px var(--ink);
+}
+
+@keyframes milestonePunch {
+  0% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+  22% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.94) translateY(-14px);
+  }
+}
+
+/* Static shadow, animated opacity — box-shadow animation would rasterize a
+   full-viewport blur every frame exactly mid-fling. */
+.edgePulse {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  pointer-events: none;
+  box-shadow: inset 0 0 48px 6px rgba(232, 71, 43, 0.3);
+  opacity: 0;
+  will-change: opacity;
+  animation: edgePulse 320ms ease-out forwards;
+}
+
+@keyframes edgePulse {
+  0% {
+    opacity: 0;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 /* ------------------------------------------------------------- COURSE --- */
@@ -211,6 +440,9 @@ button {
   min-height: var(--course-height);
   overflow: hidden;
   background: var(--paper);
+  /* Kills the iOS text-selection magnifier during frantic thumb-drags. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .rulerRail {
@@ -273,6 +505,9 @@ button {
   left: var(--rail-width);
   height: var(--course-height);
   pointer-events: none;
+  /* The descent: morning paper, hot midday amber, burnt clay, stadium
+     tunnel. Percentage stops are resolution-independent, so they scale with
+     the calibration slider automatically. */
   background:
     linear-gradient(90deg, rgba(232, 71, 43, 0.16) 0 3px, transparent 3px 100%),
     repeating-linear-gradient(
@@ -282,7 +517,17 @@ button {
       transparent 1px,
       transparent var(--foot-size)
     ),
-    linear-gradient(180deg, var(--paper-lit) 0%, var(--paper-2) 100%);
+    linear-gradient(
+      180deg,
+      var(--paper-lit) 0%,
+      var(--paper) 28%,
+      #eed9a8 50%,
+      #e9c98b 68%,
+      #ddae6e 82%,
+      #c08049 92%,
+      #7d4a2e 97%,
+      #46291c 100%
+    );
 }
 
 .raceLane::before {
@@ -301,6 +546,25 @@ button {
   );
 }
 
+/* Cream center dashes that surface only in the tunnel's dark zone. */
+.raceLane::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  content: '';
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 250, 240, 0.22) 0,
+    rgba(255, 250, 240, 0.22) 28px,
+    transparent 28px,
+    transparent 58px
+  );
+  -webkit-mask-image: linear-gradient(to bottom, transparent 91%, #000 96%);
+  mask-image: linear-gradient(to bottom, transparent 91%, #000 96%);
+}
+
 /* Starting line shown at the top of the course once the race begins. */
 .courseStart {
   position: absolute;
@@ -315,12 +579,11 @@ button {
   position: relative;
   height: 22px;
   border-radius: 4px;
-  background:
-    repeating-linear-gradient(
-      45deg,
-      var(--ink) 0 11px,
-      var(--cream) 11px 22px
-    );
+  background: repeating-linear-gradient(
+    45deg,
+    var(--ink) 0 11px,
+    var(--cream) 11px 22px
+  );
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
 }
 
@@ -369,6 +632,62 @@ button {
   }
 }
 
+/* ---------------------------------------------------------- ROAD PAINT --- */
+
+/* Stenciled decade copy painted on the lane. The grain mask punches
+   pixel-holes — worn road paint, not UI chrome. */
+.decadeMark {
+  position: absolute;
+  right: 14px;
+  left: calc(var(--rail-width) + 18px);
+  z-index: 1;
+  pointer-events: none;
+  transform: rotate(var(--tilt));
+  transform-origin: left top;
+}
+
+.decadeMark span {
+  display: block;
+  color: rgba(184, 49, 26, 0.45);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.3em;
+}
+
+.decadeMark strong {
+  display: block;
+  margin-top: 2px;
+  color: rgba(29, 38, 31, 0.14);
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 11vw, 5.5rem);
+  font-weight: 800;
+  line-height: 0.88;
+  text-transform: uppercase;
+  -webkit-mask-image: var(--grain);
+  mask-image: var(--grain);
+  -webkit-mask-size: 200px;
+  mask-size: 200px;
+}
+
+/* 80 and 90 ft sit in the tunnel's dark zone. */
+.decadeMark-dark strong {
+  color: rgba(249, 245, 232, 0.16);
+}
+
+.decadeMark-dark span {
+  color: rgba(243, 195, 59, 0.4);
+}
+
+/* SEND IT — the only orange paint on the course, right before the tunnel.
+   Class-targeted (not :last-of-type, which would match the last sibling DIV
+   — a milestone or the ghost — and never a decade mark). Must stay after
+   .decadeMark-dark so source order wins at equal specificity. */
+.decadeMark-send strong {
+  color: rgba(232, 71, 43, 0.34);
+}
+
 .milestone {
   position: absolute;
   right: 18px;
@@ -388,6 +707,75 @@ button {
   border-radius: 999px;
   font-family: var(--font-display);
   font-size: 0.82rem;
+  font-weight: 700;
+}
+
+/* Gates you broke stay broken — scrolling back up shows the torn tape. */
+.milestone[data-passed] {
+  border-top-style: solid;
+  border-top-color: var(--orange);
+}
+
+.milestone[data-passed] span {
+  background: var(--orange);
+  animation: stampPop 300ms ease;
+}
+
+@keyframes stampPop {
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+/* --------------------------------------------------------------- GHOST --- */
+
+.paceGhost {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--rail-width);
+  z-index: 3;
+  height: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.paceGhost-challenge {
+  border-top: 3px solid var(--orange);
+  box-shadow: 0 0 14px rgba(232, 71, 43, 0.55);
+}
+
+.paceGhost-pb {
+  border-top: 2px dashed rgba(25, 35, 29, 0.45);
+}
+
+.paceGhostLabel {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.paceGhost-challenge .paceGhostLabel {
+  top: -32px;
+  left: 14px;
+  padding: 5px 11px;
+  color: var(--cream);
+  background: var(--orange);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.paceGhost-pb .paceGhostLabel {
+  top: -26px;
+  right: 14px;
+  padding: 4px 10px;
+  color: var(--ink-soft);
+  background: rgba(255, 250, 240, 0.85);
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
@@ -411,6 +799,14 @@ button {
   bottom: 0;
   left: 0;
   height: 34px;
+  overflow: visible;
+}
+
+/* Both halves carry the identical full-width pattern, so the jagged seam is
+   pixel-perfect until the snap. */
+.tapeHalf {
+  position: absolute;
+  inset: 0;
   border-top: 3px solid var(--ink);
   border-bottom: 3px solid var(--ink);
   background:
@@ -421,6 +817,96 @@ button {
     0 0,
     17px 17px;
   background-size: 34px 34px;
+}
+
+.tapeHalf-l {
+  clip-path: polygon(
+    0 0,
+    62% 0,
+    60.6% 18%,
+    63.1% 37%,
+    60.9% 56%,
+    62.7% 75%,
+    61.2% 100%,
+    0 100%
+  );
+}
+
+.tapeHalf-r {
+  clip-path: polygon(
+    62% 0,
+    100% 0,
+    100% 100%,
+    61.2% 100%,
+    62.7% 75%,
+    60.9% 56%,
+    63.1% 37%,
+    60.6% 18%
+  );
+}
+
+.scrollRace[data-status='finished'] .tapeHalf-l {
+  transform-origin: 0 100%;
+  animation: tapeSnapL 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.scrollRace[data-status='finished'] .tapeHalf-r {
+  transform-origin: 100% 100%;
+  animation: tapeSnapR 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) 0.04s forwards;
+}
+
+@keyframes tapeSnapL {
+  30% {
+    transform: translate(-1%, 3px) rotate(2deg);
+  }
+  100% {
+    transform: translate(-3.5%, 20px) rotate(7deg);
+  }
+}
+
+@keyframes tapeSnapR {
+  30% {
+    transform: translate(1%, 4px) rotate(-3deg);
+  }
+  100% {
+    transform: translate(3%, 30px) rotate(-10deg);
+  }
+}
+
+.tapeShard {
+  position: absolute;
+  top: 50%;
+  left: 62%;
+  width: 9px;
+  height: 3.5px;
+  background: var(--ink);
+  opacity: 0;
+  transform: rotate(calc(var(--i) * 51deg)) translateX(6px);
+}
+
+.tapeShard:nth-child(3n) {
+  background: var(--cream);
+}
+
+.tapeShard:nth-child(4n) {
+  background: var(--orange);
+}
+
+.scrollRace[data-status='finished'] .tapeShard {
+  animation: shardFly 0.8s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--i) * 18ms)
+    forwards;
+}
+
+@keyframes shardFly {
+  0% {
+    opacity: 1;
+    transform: rotate(calc(var(--i) * 51deg)) translateX(6px);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--i) * 51deg))
+      translateX(calc(44px + var(--i) * 7px));
+  }
 }
 
 .finishPanel {
@@ -436,6 +922,12 @@ button {
   border-radius: 18px;
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
   animation: panelRise 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Tape snaps, THEN the result rises — cause, then effect. */
+.scrollRace[data-status='finished'] .finishPanel {
+  animation-delay: 0.25s;
+  animation-fill-mode: backwards;
 }
 
 @keyframes panelRise {
@@ -467,6 +959,68 @@ button {
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  animation: badgePunch 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.15s backwards;
+}
+
+@keyframes badgePunch {
+  0% {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+  60% {
+    transform: scale(0.95);
+  }
+}
+
+/* The rubber stamp thunking onto paper. */
+.rankStamp,
+.windStamp {
+  display: inline-block;
+  margin: 0 10px 10px 0;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: rotate(-4deg);
+  animation: stampThunk 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s backwards;
+}
+
+.rankStamp {
+  color: var(--orange);
+  border: 3px double var(--orange);
+}
+
+.windStamp {
+  color: var(--cream);
+  background: var(--orange);
+}
+
+@keyframes stampThunk {
+  0% {
+    opacity: 0;
+    transform: scale(2.1) rotate(-12deg);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(0.95) rotate(-3deg);
+  }
+}
+
+.dayPill {
+  display: inline-block;
+  margin: 0 0 10px;
+  padding: 4px 10px;
+  color: var(--cream);
+  background: var(--ink-2);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .finishPanel h2 {
@@ -475,6 +1029,24 @@ button {
   font-size: 2.6rem;
   font-weight: 800;
   line-height: 0.95;
+}
+
+/* Programmatically focused on finish for screen readers — no visible ring. */
+.finishPanel h2:focus {
+  outline: none;
+}
+
+.shareFallback {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: var(--cream);
+  background: rgba(249, 245, 232, 0.08);
+  border: 1px dashed rgba(249, 245, 232, 0.34);
+  border-radius: 11px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  resize: none;
 }
 
 .finishHint {
@@ -494,16 +1066,106 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.pbDelta {
+  margin: 10px 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pbDelta-pb {
+  color: var(--amber);
+}
+
+.pbDelta-close {
+  color: var(--cream);
+}
+
+.pbDelta-off,
+.pbDelta-first {
+  color: rgba(249, 245, 232, 0.6);
+}
+
 .resultRank {
-  margin: 8px 0 16px;
+  margin: 8px 0 0;
   color: rgba(249, 245, 232, 0.74);
   font-weight: 600;
+}
+
+.percentileLine {
+  margin: 4px 0 0;
+  color: rgba(249, 245, 232, 0.74);
+  font-weight: 600;
+}
+
+.windNote {
+  margin: 12px 0 0;
+  color: rgba(249, 245, 232, 0.74);
+  font-weight: 500;
+}
+
+.funFacts {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 0;
+  padding: 0;
+  color: rgba(249, 245, 232, 0.74);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  list-style: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .funFacts li {
+    opacity: 0;
+    animation: rise 0.4s ease forwards;
+  }
+
+  .funFacts li:nth-child(1) {
+    animation-delay: 0.45s;
+  }
+
+  .funFacts li:nth-child(2) {
+    animation-delay: 0.53s;
+  }
+
+  .funFacts li:nth-child(3) {
+    animation-delay: 0.61s;
+  }
+}
+
+.finishActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.finishAction {
+  justify-content: center;
+  min-height: 56px;
+  padding: 0 12px;
+  font-size: 1.05rem;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.finishAction.isCopied {
+  animation: copyPulse 0.18s ease;
+}
+
+@keyframes copyPulse {
+  from {
+    transform: scale(0.96);
+  }
 }
 
 .saveForm {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
+  margin-top: 12px;
 }
 
 .saveForm input {
@@ -535,18 +1197,62 @@ button {
   filter: none;
 }
 
-.resetButton {
-  justify-content: center;
+.notEligible {
   width: 100%;
   margin-top: 12px;
-  padding: 0 16px;
-  color: var(--cream);
-  background: transparent;
-  border: 1px solid rgba(249, 245, 232, 0.34);
 }
 
-.resetButton:hover {
-  background: rgba(249, 245, 232, 0.08);
+.savedNote {
+  margin: 14px 0 0;
+  color: rgba(249, 245, 232, 0.74);
+  font-weight: 500;
+}
+
+.savedNote strong {
+  color: var(--amber);
+}
+
+.textButton {
+  margin: -12px -4px -12px 4px;
+  /* Padding + negative margin: a 44px hit area without moving the layout. */
+  padding: 12px 8px;
+  color: rgba(249, 245, 232, 0.6);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.textButton:hover {
+  color: var(--cream);
+}
+
+.backLink {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  color: rgba(249, 245, 232, 0.6);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.backLink:hover {
+  color: var(--cream);
+}
+
+/* ------------------------------------------------------------ CONFETTI --- */
+
+/* JS sets the element's width/height to match its buffer exactly — CSS
+   viewport units would stretch it behind a collapsed mobile toolbar. */
+.confettiCanvas {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
 }
 
 /* --------------------------------------------------------------- INTRO --- */
@@ -556,8 +1262,14 @@ button {
   inset: 0;
   z-index: 50;
   overflow-y: auto;
-  background:
-    radial-gradient(135% 90% at 50% -15%, var(--paper-lit) 0%, var(--paper) 46%, var(--paper-2) 100%);
+  /* Don't chain a top-of-intro drag to the root scroller (iOS PTR). */
+  overscroll-behavior-y: contain;
+  background: radial-gradient(
+    135% 90% at 50% -15%,
+    var(--paper-lit) 0%,
+    var(--paper) 46%,
+    var(--paper-2) 100%
+  );
 }
 
 .introGrain {
@@ -595,7 +1307,7 @@ button {
     animation: fadeIn 0.4s ease;
   }
 
-  .introInner .introMain > * {
+  .introInner .introMain > :not(.introTitle) {
     opacity: 0;
     animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
@@ -606,26 +1318,65 @@ button {
   .introEyebrow {
     animation-delay: 0.08s;
   }
-  .introTitle {
-    animation-delay: 0.14s;
+  .challengeSlip {
+    animation-delay: 0.12s;
   }
   .introDesc {
-    animation-delay: 0.2s;
+    animation-delay: 0.18s;
+  }
+  .introSteps {
+    animation-delay: 0.22s;
   }
   .introStats {
     animation-delay: 0.26s;
   }
-  .startBtn {
+  .streakLapse {
+    animation-delay: 0.3s;
+  }
+  .introCta {
     animation-delay: 0.32s;
   }
   .calibrate {
     animation-delay: 0.38s;
+  }
+  .soundToggle {
+    animation-delay: 0.42s;
+  }
+  .printRow {
+    animation-delay: 0.44s;
+  }
+
+  /* The title is excluded from the stagger: each line stamps in instead. */
+  .titleLine {
+    opacity: 0;
+    animation: titleStampIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  .titleLine:first-child {
+    animation-delay: 0.12s;
+  }
+
+  .titleLine-accent {
+    animation-delay: 0.26s;
+  }
+
+  .inkStamp {
+    opacity: 0;
+    animation: inkIn 0.5s ease 0.42s forwards;
   }
 
   .introBoard {
     opacity: 0;
     animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.3s forwards;
   }
+}
+
+/* Returning players get speed, not theater. */
+.introScreen[data-returning] .introMain > *,
+.introScreen[data-returning] .titleLine,
+.introScreen[data-returning] .inkStamp,
+.introScreen[data-returning] .introBoard {
+  animation-delay: 0s !important;
 }
 
 @keyframes fadeIn {
@@ -645,13 +1396,41 @@ button {
   }
 }
 
+@keyframes titleStampIn {
+  0% {
+    opacity: 0;
+    transform: scale(1.35) rotate(calc(var(--tilt) + 2deg));
+  }
+  55% {
+    opacity: 1;
+    transform: scale(0.96) rotate(var(--tilt));
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(var(--tilt));
+  }
+}
+
+@keyframes inkIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
+
 .introTape {
   height: 30px;
   margin-bottom: 22px;
   border-bottom: 2px solid var(--line-strong);
   background-image:
     repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 96px),
-    repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 24px);
+    repeating-linear-gradient(
+      90deg,
+      var(--line-strong) 0 1px,
+      transparent 1px 24px
+    );
   background-size:
     100% 18px,
     100% 11px;
@@ -672,33 +1451,128 @@ button {
 }
 
 .introTitle {
+  position: relative;
   margin: 0;
-  color: var(--ink);
   font-family: var(--font-display);
   font-size: clamp(4.2rem, 14vw, 8.5rem);
   font-weight: 900;
-  line-height: 0.82;
+  line-height: 0.86;
   letter-spacing: -0.01em;
   text-transform: uppercase;
 }
 
-.introTitle span {
+/* A press pass that slipped: each line carries the OTHER ink as a
+   misregistered offset. */
+.titleLine {
   display: block;
+  color: var(--ink);
+  transform: rotate(var(--tilt));
+  text-shadow: 0.04em 0.045em 0 rgba(232, 71, 43, 0.9);
+}
+
+.titleLine-accent {
+  margin-left: 0.05em;
   color: var(--orange);
-  -webkit-text-stroke: 1px var(--orange-2);
+  text-shadow: 0.04em 0.045em 0 rgba(25, 35, 29, 0.92);
+}
+
+.introTitle::after {
+  position: absolute;
+  inset: -3%;
+  content: '';
+  background: var(--grain);
+  background-size: 150px;
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.inkStamp {
+  position: absolute;
+  top: 44%;
+  right: 0;
+  display: inline-block;
+  padding: 5px 11px;
+  border: 2.5px solid currentColor;
+  border-radius: 7px;
+  color: var(--orange-2);
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transform: rotate(-6.5deg);
+  -webkit-mask-image: var(--grain);
+  mask-image: var(--grain);
+  -webkit-mask-size: 120px;
+  mask-size: 120px;
+  opacity: 0.85;
 }
 
 .introDesc {
   max-width: 46ch;
-  margin: 22px 0 26px;
+  margin: 20px 0 14px;
   color: var(--ink-2);
   font-size: 1.12rem;
   line-height: 1.5;
 }
 
-.introDesc strong {
-  color: var(--orange-2);
+.introSteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 22px;
+  padding: 0;
+  list-style: none;
+}
+
+.introSteps li {
+  padding: 7px 12px;
+  color: var(--ink-2);
+  background: rgba(255, 251, 240, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
   font-weight: 700;
+}
+
+.introSteps li + li {
+  position: relative;
+  margin-left: 18px;
+}
+
+.introSteps li + li::before {
+  position: absolute;
+  left: -16px;
+  content: '→';
+  color: var(--ink-soft);
+}
+
+.challengeSlip {
+  width: fit-content;
+  margin: 0 0 22px;
+  padding: 14px 18px;
+  background: var(--cream);
+  border: 2px dashed var(--orange-2);
+  border-radius: 10px;
+  transform: rotate(1.5deg);
+}
+
+.challengeSlip .eyebrow {
+  margin-bottom: 4px;
+  color: var(--orange-2);
+}
+
+.challengeSlipBody {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.challengeSlipBody strong {
+  color: var(--orange-2);
 }
 
 .introStats {
@@ -733,6 +1607,22 @@ button {
   font-weight: 700;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.introStat strong.introStatHot {
+  color: var(--orange-2);
+}
+
+.introStat strong.introStatMuted {
+  font-size: 0.95rem;
+  line-height: 1.75;
+}
+
+.streakLapse {
+  margin: -16px 0 24px;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-style: italic;
 }
 
 .primaryButton {
@@ -846,18 +1736,20 @@ button {
 }
 
 .scaleControls input[type='number'] {
-  width: 66px;
-  min-height: 38px;
+  width: 70px;
+  min-height: 44px;
   padding: 0 8px;
   color: var(--ink);
   background: var(--cream);
   border: 1px solid var(--line);
   border-radius: 9px;
+  /* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */
+  font-size: 1rem;
   font-weight: 700;
 }
 
 .scaleControls button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 0 11px;
   color: var(--ink-2);
   background: transparent;
@@ -866,6 +1758,35 @@ button {
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.soundToggle {
+  display: block;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 12px 0;
+  color: var(--ink-soft);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.soundToggle:hover {
+  color: var(--ink);
+}
+
+/* The line people zoom into and quote-tweet. */
+.printRow {
+  margin: 26px 0 0;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  opacity: 0.65;
 }
 
 /* --------------------------------------------------------- LEADERBOARD --- */
@@ -893,11 +1814,10 @@ button {
   color: var(--amber);
 }
 
-.emptyBoard {
-  margin: 0;
-  padding: 18px 4px;
-  color: rgba(249, 245, 232, 0.6);
-  font-weight: 500;
+.emptyBoardTitle {
+  margin: 0 0 12px;
+  color: rgba(249, 245, 232, 0.75);
+  font-weight: 600;
   text-align: center;
 }
 
@@ -925,6 +1845,35 @@ button {
 .leaderboardList li[data-medal] {
   background: rgba(243, 195, 59, 0.08);
   border-color: rgba(243, 195, 59, 0.24);
+}
+
+/* Previews winning instead of showing a void. */
+.leaderboardList li.ghostRow {
+  color: rgba(249, 245, 232, 0.52);
+  background: transparent;
+  border: 1px dashed rgba(249, 245, 232, 0.22);
+}
+
+.ghostRow .leaderboardRank {
+  color: rgba(249, 245, 232, 0.52);
+  background: transparent;
+  border: 1px dashed rgba(249, 245, 232, 0.3);
+}
+
+.ghostRow .leaderboardTime {
+  color: rgba(249, 245, 232, 0.52);
+}
+
+/* Back at the top, your eye lands on YOUR row. */
+.leaderboardList li.justSaved {
+  animation: rowGlow 1.4s ease 1;
+}
+
+@keyframes rowGlow {
+  from {
+    background: rgba(243, 195, 59, 0.38);
+    box-shadow: 0 0 0 1px rgba(243, 195, 59, 0.5);
+  }
 }
 
 .leaderboardRank {
@@ -979,9 +1928,13 @@ button {
   place-content: center;
   justify-items: center;
   gap: 6px;
-  background:
-    radial-gradient(80% 60% at 50% 50%, rgba(20, 28, 24, 0.96), rgba(12, 18, 15, 0.99));
-  backdrop-filter: blur(4px);
+  background: radial-gradient(
+    80% 60% at 50% 50%,
+    rgba(20, 28, 24, 0.96),
+    rgba(12, 18, 15, 0.99)
+  );
+  /* iOS Safari doesn't fully honor body overflow:hidden; this overlay does. */
+  touch-action: none;
 }
 
 .countdownLabel {
@@ -1009,7 +1962,7 @@ button {
   box-shadow:
     0 0 0 10px rgba(232, 71, 43, 0.12),
     0 24px 60px rgba(0, 0, 0, 0.5);
-  animation: countPop 1s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: countPop 0.75s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes countPop {
@@ -1034,6 +1987,12 @@ button {
   margin-top: 14px;
   color: rgba(249, 245, 232, 0.66);
   font-weight: 500;
+}
+
+.countdownSkip {
+  margin-top: 4px;
+  color: rgba(249, 245, 232, 0.58);
+  font-size: 0.85rem;
 }
 
 .goFlash {
@@ -1147,16 +2106,25 @@ button {
   .rulerTick-inch {
     width: 24px;
   }
+
+  /* Start stays under the thumb even when the leaderboard pushes content. */
+  .introCta {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding: 12px 0 calc(10px + env(safe-area-inset-bottom));
+    background: linear-gradient(to bottom, transparent, var(--paper) 38%);
+  }
 }
 
 @media (max-width: 430px) {
   .raceHud {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
   .hudProgress {
     grid-column: 1 / -1;
-    order: 3;
+    order: 4;
   }
 
   .hudButton {
@@ -1180,6 +2148,16 @@ button {
     width: 100%;
   }
 
+  .finishActions {
+    grid-template-columns: 1fr;
+  }
+
+  /* The two-row HUD is ~100px tall here; less bottom padding drops the
+     panel so the rank stamp clears it at full scroll. */
+  .finishZone {
+    padding-bottom: 18px;
+  }
+
   .scaleControls {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 8px 10px;
@@ -1197,12 +2175,35 @@ button {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
     animation-duration: 0.01ms !important;
+    /* Without this, delay + backwards fill pins elements at their invisible
+       from-frame for the whole delay (finish panel, stamps, shards). */
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
   }
 
   .introMain > *,
-  .introBoard {
+  .introBoard,
+  .titleLine,
+  .inkStamp,
+  .funFacts li {
     opacity: 1;
+  }
+
+  .inkStamp {
+    opacity: 0.85;
+  }
+
+  /* goPop ends at opacity 0; show a brief static GO! card instead — the JS
+     timeout removes it after 720ms. */
+  .goFlash span {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .speedLines {
+    display: none;
   }
 }
