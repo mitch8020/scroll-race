@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import {
   ChevronsDown,
   Flag,
+  Globe,
   Play,
   RotateCcw,
   Ruler,
@@ -14,34 +15,48 @@ import {
 import type { CSSProperties, FormEvent } from 'react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import type { RaceEvent } from '../lib/race'
 import {
-  TOTAL_FEET,
+  DEFAULT_EVENT_FEET,
+  EVENTS,
+  MIN_LEGIT_MS_PER_FOOT,
+  PERCENT_STEPS,
   averageMph,
   buildShareText,
   clipName,
+  eventForFeet,
   fasterThanPercent,
-  feetAtTime,
   formatTime,
   ftpsToMph,
   parseChallengeMs,
+  parseEventFeet,
+  percentAtTime,
+  randomRacerName,
   rankTitle,
   sanitizeName,
   speedTicketLine,
-  timeAtFeet,
+  timeAtPercent,
   unitLine,
 } from '../lib/race'
+import type { GlobalEntry } from '../lib/board'
+import { SUBMIT_COOLDOWN_MS } from '../lib/board'
+import { fetchGlobalBoard, submitToGlobalBoard } from '../lib/globalBoard'
 import * as sfx from '../lib/sfx'
 
 export { formatTime }
 
 export const Route = createFileRoute('/')({
   validateSearch: (search: Record<string, unknown>) => {
-    const beat = parseChallengeMs(search.beat)
+    // Event first: the challenge floor scales with the distance, so a link
+    // can never demand a time the wind-assist check would auto-flag.
+    const event = parseEventFeet(search.event)
+    const beat = parseChallengeMs(search.beat, event ?? DEFAULT_EVENT_FEET)
     const by = sanitizeName(typeof search.by === 'string' ? search.by : '')
 
     return {
       beat,
       by: by || undefined,
+      event,
     }
   },
   component: Home,
@@ -51,21 +66,69 @@ const INCHES_PER_FOOT = 12
 const CSS_PIXELS_PER_INCH = 96
 const MIN_PIXELS_PER_INCH = 72
 const MAX_PIXELS_PER_INCH = 220
-const STORAGE_KEY = 'scroll-race-leaderboard-v1'
+const LEGACY_LEADERBOARD_KEY = 'scroll-race-leaderboard-v1'
+const LEGACY_PB_KEY = 'scroll-race-pb-v1'
 const SCALE_STORAGE_KEY = 'scroll-race-pixels-per-inch-v1'
-const PB_STORAGE_KEY = 'scroll-race-pb-v1'
 const NAME_STORAGE_KEY = 'scroll-race-player-name-v1'
 const STREAK_STORAGE_KEY = 'scroll-race-streak-v1'
 const RUNS_STORAGE_KEY = 'scroll-race-runs-v1'
+const EVENT_STORAGE_KEY = 'scroll-race-event-v1'
 const SESSION_NO_PB_KEY = 'scroll-race-session-no-pb-runs'
+const MEET_BANNER_TEXT =
+  'OFFICIAL SCROLL MEET · ALL THUMBS WELCOME · SANCTIONED BY NOBODY'
+// Brand marks as Simple Icons path data (CC0): lucide ships no Discord glyph,
+// so all four brands render from one filled 24×24 set for a matched weight.
+const BRAND_PATHS = {
+  github:
+    'M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12',
+  instagram:
+    'M7.0301.084c-1.2768.0602-2.1487.264-2.911.5634-.7888.3075-1.4575.72-2.1228 1.3877-.6652.6677-1.075 1.3368-1.3802 2.127-.2954.7638-.4956 1.6365-.552 2.914-.0564 1.2775-.0689 1.6882-.0626 4.947.0062 3.2586.0206 3.6671.0825 4.9473.061 1.2765.264 2.1482.5635 2.9107.308.7889.72 1.4573 1.388 2.1228.6679.6655 1.3365 1.0743 2.1285 1.38.7632.295 1.6361.4961 2.9134.552 1.2773.056 1.6884.069 4.9462.0627 3.2578-.0062 3.668-.0207 4.9478-.0814 1.28-.0607 2.147-.2652 2.9098-.5633.7889-.3086 1.4578-.72 2.1228-1.3881.665-.6682 1.0745-1.3378 1.3795-2.1284.2957-.7632.4966-1.636.552-2.9124.056-1.2809.0692-1.6898.063-4.948-.0063-3.2583-.021-3.6668-.0817-4.9465-.0607-1.2797-.264-2.1487-.5633-2.9117-.3084-.7889-.72-1.4568-1.3876-2.1228C21.2982 1.33 20.628.9208 19.8378.6165 19.074.321 18.2017.1197 16.9244.0645 15.6471.0093 15.236-.005 11.977.0014 8.718.0076 8.31.0215 7.0301.0839m.1402 21.6932c-1.17-.0509-1.8053-.2453-2.2287-.408-.5606-.216-.96-.4771-1.3819-.895-.422-.4178-.6811-.8186-.9-1.378-.1644-.4234-.3624-1.058-.4171-2.228-.0595-1.2645-.072-1.6442-.079-4.848-.007-3.2037.0053-3.583.0607-4.848.05-1.169.2456-1.805.408-2.2282.216-.5613.4762-.96.895-1.3816.4188-.4217.8184-.6814 1.3783-.9003.423-.1651 1.0575-.3614 2.227-.4171 1.2655-.06 1.6447-.072 4.848-.079 3.2033-.007 3.5835.005 4.8495.0608 1.169.0508 1.8053.2445 2.228.408.5608.216.96.4754 1.3816.895.4217.4194.6816.8176.9005 1.3787.1653.4217.3617 1.056.4169 2.2263.0602 1.2655.0739 1.645.0796 4.848.0058 3.203-.0055 3.5834-.061 4.848-.051 1.17-.245 1.8055-.408 2.2294-.216.5604-.4763.96-.8954 1.3814-.419.4215-.8181.6811-1.3783.9-.4224.1649-1.0577.3617-2.2262.4174-1.2656.0595-1.6448.072-4.8493.079-3.2045.007-3.5825-.006-4.848-.0608M16.953 5.5864A1.44 1.44 0 1 0 18.39 4.144a1.44 1.44 0 0 0-1.437 1.4424M5.8385 12.012c.0067 3.4032 2.7706 6.1557 6.173 6.1493 3.4026-.0065 6.157-2.7701 6.1506-6.1733-.0065-3.4032-2.771-6.1565-6.174-6.1498-3.403.0067-6.156 2.771-6.1496 6.1738M8 12.0077a4 4 0 1 1 4.008 3.9921A3.9996 3.9996 0 0 1 8 12.0077',
+  linkedin:
+    'M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z',
+  discord:
+    'M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z',
+} as const
+
+const CREDIT_LINKS: Array<{
+  label: string
+  href: string
+  brand: keyof typeof BRAND_PATHS | null
+}> = [
+  {
+    label: 'Personal Website',
+    href: 'https://jpmitra.netlify.app/',
+    brand: null,
+  },
+  { label: 'GitHub', href: 'https://github.com/mitch8020', brand: 'github' },
+  {
+    label: 'Instagram',
+    href: 'https://www.instagram.com/johnestofpauls/',
+    brand: 'instagram',
+  },
+  {
+    label: 'LinkedIn',
+    href: 'https://www.linkedin.com/in/johnestofpauls/',
+    brand: 'linkedin',
+  },
+  {
+    label: 'Discord',
+    href: 'https://discord.com/users/929047382618955867',
+    brand: 'discord',
+  },
+]
 const MAX_LEADERBOARD_ENTRIES = 10
-const MILESTONES = [25, 50, 75]
+// Milestone gates sit at quarters of the course, whatever its length.
+const MILESTONE_PERCENTS = [25, 50, 75]
 const COUNTDOWN_FROM = 3
 const COUNTDOWN_BEAT_MS = 750
 // A single-frame jump bigger than this is a teleport, not a scroll.
 const MAX_FRAME_JUMP_VH = 6
 const MIN_FRAME_JUMP_PX = 6000
-const MIN_LEGIT_TIME_MS = 1000
+// Teleport-gate jank tolerance: the allowance scales with the gap between
+// samples (dropped frames concentrate legit momentum into one reading) but
+// is capped so a deliberate stall can't buy an unbounded window.
+const FRAME_BUDGET_MS = 16.7
+const MAX_JANK_SCALE = 30
 const DELTA_UPDATE_INTERVAL_MS = 250
 const DELTA_SIGN_HYSTERESIS_MS = 60
 // Vertical dash periods of the speed-line layers; transforms wrap on these so
@@ -73,17 +136,27 @@ const DELTA_SIGN_HYSTERESIS_MS = 60
 const SPEED_LAYER_WRAP_A = 220
 const SPEED_LAYER_WRAP_B = 110
 
+// Course-side copy positioned by percent so every event distance reads the
+// same arc. The labels show real feet for the active event.
 const DECADE_MARKS = [
-  { feet: 10, copy: 'WARMING UP' },
-  { feet: 20, copy: 'FIND YOUR STRIDE' },
-  { feet: 30, copy: 'TOP GEAR' },
-  { feet: 40, copy: "DON'T BLINK" },
-  { feet: 50, copy: 'HALFWAY · NO BRAKES' },
-  { feet: 60, copy: 'LUNGS ON FIRE' },
-  { feet: 70, copy: "THE WALL ISN'T REAL" },
-  { feet: 80, copy: 'EYES ON THE TAPE' },
-  { feet: 90, copy: 'SEND IT' },
+  { percent: 10, copy: 'WARMING UP' },
+  { percent: 20, copy: 'FIND YOUR STRIDE' },
+  { percent: 30, copy: 'TOP GEAR' },
+  { percent: 40, copy: "DON'T BLINK" },
+  { percent: 50, copy: 'HALFWAY · NO BRAKES' },
+  { percent: 60, copy: 'LUNGS ON FIRE' },
+  { percent: 70, copy: "THE WALL ISN'T REAL" },
+  { percent: 80, copy: 'EYES ON THE TAPE' },
+  { percent: 90, copy: 'SEND IT' },
 ]
+
+function leaderboardKey(eventFeet: number) {
+  return `scroll-race-leaderboard-v2-${eventFeet}`
+}
+
+function pbKey(eventFeet: number) {
+  return `scroll-race-pb-v2-${eventFeet}`
+}
 
 type RaceStatus = 'intro' | 'countdown' | 'racing' | 'finished'
 
@@ -94,21 +167,28 @@ type RulerTick = {
   label?: string
 }
 
+// Entries carry the metadata a future public board needs: event distance,
+// the px/in calibration the run used, and a coarse device class.
 type LeaderboardEntry = {
   id: string
   name: string
   timeMs: number
   completedAt: string
   splitsMs?: Array<number>
+  eventFeet?: number
+  ppi?: number
+  device?: string
 }
 
 type Challenge = {
   name: string
   timeMs: number
+  eventFeet: number
 }
 
 type RaceResult = {
   timeMs: number
+  eventFeet: number
   splitsMs: Array<number>
   topFtps: number
   windAssisted: boolean
@@ -138,21 +218,36 @@ type StreakData = {
   todayBestMs: number | null
 }
 
+type GlobalBoardState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; entries: Array<GlobalEntry>; total: number }
+
 type CourseStyle = CSSProperties & {
   '--course-height': string
   '--foot-size': string
   '--inch-size': string
 }
 
-type TiltStyle = CSSProperties & { '--tilt': string }
-
 function Home() {
   const search = Route.useSearch()
   const navigate = Route.useNavigate()
   const [pixelsPerInch, setPixelsPerInch] = useState(CSS_PIXELS_PER_INCH)
+  const [eventFeet, setEventFeet] = useState(DEFAULT_EVENT_FEET)
+  // A challenge link pins the event it was set on. Legacy links carry ?beat
+  // with no &event — those were all set on the original 100 ft course, so a
+  // pending challenge must never fall through to the local stored event.
+  const activeEventFeet =
+    search.beat !== undefined
+      ? (search.event ?? DEFAULT_EVENT_FEET)
+      : (search.event ?? eventFeet)
+  const activeEvent = eventForFeet(activeEventFeet)
   const pixelsPerFoot = pixelsPerInch * INCHES_PER_FOOT
-  const courseHeight = TOTAL_FEET * pixelsPerFoot
-  const ticks = useMemo(() => createRulerTicks(pixelsPerInch), [pixelsPerInch])
+  const courseHeight = activeEventFeet * pixelsPerFoot
+  const ticks = useMemo(
+    () => createRulerTicks(pixelsPerInch, activeEvent),
+    [pixelsPerInch, activeEvent],
+  )
   const [raceStatus, setRaceStatus] = useState<RaceStatus>('intro')
   const [countdown, setCountdown] = useState(COUNTDOWN_FROM)
   const [goFlash, setGoFlash] = useState(false)
@@ -167,6 +262,7 @@ function Home() {
   const [lastSavedId, setLastSavedId] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
+  const [calibrateOpen, setCalibrateOpen] = useState(false)
   const [reducedMotion, setReducedMotion] = useState(false)
   const [milestoneHit, setMilestoneHit] = useState<{
     feet: number
@@ -184,6 +280,11 @@ function Home() {
   const [noPbRuns, setNoPbRuns] = useState(0)
   const [announcement, setAnnouncement] = useState('')
   const [shareFallback, setShareFallback] = useState<string | null>(null)
+  const [boardTab, setBoardTab] = useState<'world' | 'device'>('world')
+  const [globalBoard, setGlobalBoard] = useState<GlobalBoardState>({
+    status: 'loading',
+  })
+  const [globalRank, setGlobalRank] = useState<number | null>(null)
   const startTimeRef = useRef(0)
   const ghostRef = useRef<HTMLDivElement | null>(null)
   const ghostDotRef = useRef<HTMLSpanElement | null>(null)
@@ -197,8 +298,11 @@ function Home() {
   // preference out of the racing effect's deps, where a mid-race change
   // would restart the clock and wipe telemetry.
   const reducedMotionRef = useRef(false)
-  // In-session PB fallback for when localStorage writes silently fail.
-  const pbRef = useRef<number | null>(null)
+  // In-session PB fallback for when localStorage writes silently fail —
+  // keyed by event so switching distances doesn't wipe it.
+  const pbRef = useRef<Record<number, number | null>>({})
+  // One world-board submission per result, even if save paths re-fire.
+  const submittedResultRef = useRef<RaceResult | null>(null)
   const boardBestAtStartRef = useRef<number | null>(null)
   const raceChallengeRef = useRef<Challenge | null>(null)
   const deltaUpdateAtRef = useRef(0)
@@ -207,9 +311,13 @@ function Home() {
   const challenge = useMemo<Challenge | null>(
     () =>
       search.beat
-        ? { timeMs: search.beat, name: search.by ?? 'A rival' }
+        ? {
+            timeMs: search.beat,
+            name: search.by ?? 'A rival',
+            eventFeet: search.event ?? DEFAULT_EVENT_FEET,
+          }
         : null,
-    [search.beat, search.by],
+    [search.beat, search.by, search.event],
   )
 
   const bestTime = leaderboard[0]?.timeMs
@@ -219,13 +327,8 @@ function Home() {
   const hudVisible = raceStatus === 'racing' || raceStatus === 'finished'
 
   useEffect(() => {
-    setLeaderboard(readLeaderboard())
     setPixelsPerInch(readPixelsPerInch())
-
-    const storedPb = readPb()
-
-    setPbMs(storedPb)
-    pbRef.current = storedPb
+    setEventFeet(readStoredEventFeet())
     setRunCount(readRunCount())
     setSoundOn(!sfx.isMuted())
 
@@ -272,6 +375,60 @@ function Home() {
     return () => mediaQuery.removeEventListener('change', applyMotionPreference)
   }, [])
 
+  // Each event keeps its own board and personal best.
+  useEffect(() => {
+    setLeaderboard(readLeaderboard(activeEventFeet))
+
+    const storedPb = readPb(activeEventFeet) ?? pbRef.current[activeEventFeet]
+
+    setPbMs(storedPb ?? null)
+    pbRef.current[activeEventFeet] = storedPb ?? null
+  }, [activeEventFeet])
+
+  // World board: refresh whenever the intro is showing (mount, event switch,
+  // and back-from-a-race so a fresh post appears). Local-first — failure just
+  // means the tab falls back to this device's board. Warm data stays on
+  // screen during a refresh instead of flashing the skeleton, and the
+  // request aborts if the player starts racing. Event switches reset to the
+  // skeleton via the eventEpoch key so one event's board never lingers under
+  // another's header.
+  const lastBoardEventRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (raceStatus !== 'intro') {
+      return
+    }
+
+    let cancelled = false
+    const controller = new AbortController()
+    const sameEvent = lastBoardEventRef.current === activeEventFeet
+
+    lastBoardEventRef.current = activeEventFeet
+    setGlobalBoard((previous) =>
+      sameEvent && previous.status === 'ready'
+        ? previous
+        : { status: 'loading' },
+    )
+    void fetchGlobalBoard(activeEventFeet, controller.signal).then((board) => {
+      if (cancelled) {
+        return
+      }
+
+      setGlobalBoard((previous) =>
+        board
+          ? { status: 'ready', entries: board.entries, total: board.total }
+          : sameEvent && previous.status === 'ready'
+            ? previous
+            : { status: 'error' },
+      )
+    })
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [raceStatus, activeEventFeet])
+
   // Lock the page while the intro / countdown are showing so the player only
   // sees the welcome screen until the race actually begins.
   useEffect(() => {
@@ -296,7 +453,7 @@ function Home() {
       const progress =
         maxScroll === 0 ? 0 : clamp(window.scrollY / maxScroll, 0, 1)
 
-      setProgressFeet(Number((progress * TOTAL_FEET).toFixed(1)))
+      setProgressFeet(Number((progress * activeEventFeet).toFixed(1)))
     }
 
     updateProgress()
@@ -307,7 +464,7 @@ function Home() {
       window.removeEventListener('scroll', updateProgress)
       window.removeEventListener('resize', updateProgress)
     }
-  }, [raceStatus])
+  }, [raceStatus, activeEventFeet])
 
   // 3 . 2 . 1 . GO — skippable the moment the player moves. A false start is
   // not penalized; eager players are the signal.
@@ -382,13 +539,15 @@ function Home() {
 
     startTimeRef.current = performance.now()
 
-    // Telemetry for the race: per-foot splits, smoothed velocity, teleport
+    // Telemetry for the race: per-percent splits, smoothed velocity, teleport
     // detection. All refs + locals — the only per-frame setState calls are
     // setElapsedMs + setProgressFeet (batched into one commit), plus rare
     // event-driven writes (milestones, delta at 4Hz).
-    const splits = new Array<number>(TOTAL_FEET + 1).fill(0)
-    let lastFoot = 0
-    let prevFeet = 0
+    const raceFeet = activeEventFeet
+    const minLegitMs = raceFeet * MIN_LEGIT_MS_PER_FOOT
+    const splits = new Array<number>(PERCENT_STEPS + 1).fill(0)
+    let lastPercentMark = 0
+    let prevPercent = 0
     let lastY = window.scrollY
     let lastTs = performance.now()
     let velocity = 0
@@ -435,20 +594,24 @@ function Home() {
 
       // The scroll listener can finish the race between rAF frames, so the
       // final jump must be teleport-checked here too — otherwise one End-key
-      // leap straight onto the tape bypasses detection entirely.
+      // leap straight onto the tape bypasses detection entirely. The gap
+      // scaling mirrors the in-loop gate (see updateTimer).
+      const finishGapMs = Math.max(performance.now() - lastTs, FRAME_BUDGET_MS)
+
       if (
         Math.abs(window.scrollY - lastY) >
-        Math.max(viewportHeight * MAX_FRAME_JUMP_VH, MIN_FRAME_JUMP_PX)
+        Math.max(viewportHeight * MAX_FRAME_JUMP_VH, MIN_FRAME_JUMP_PX) *
+          Math.min(finishGapMs / FRAME_BUDGET_MS, MAX_JANK_SCALE)
       ) {
         windAssisted = true
       }
 
-      while (lastFoot < TOTAL_FEET) {
-        lastFoot += 1
-        splits[lastFoot] = finalTime
+      while (lastPercentMark < PERCENT_STEPS) {
+        lastPercentMark += 1
+        splits[lastPercentMark] = finalTime
       }
 
-      if (finalTime < MIN_LEGIT_TIME_MS) {
+      if (finalTime < minLegitMs) {
         windAssisted = true
       }
 
@@ -463,13 +626,13 @@ function Home() {
 
       // Storage is best-effort: if writes silently fail, the in-session ref
       // keeps PB deltas honest instead of claiming a first time every run.
-      const prevPb = readPb() ?? pbRef.current
+      const prevPb = readPb(raceFeet) ?? pbRef.current[raceFeet] ?? null
       const isPb = !windAssisted && (prevPb === null || finalTime < prevPb)
 
       if (isPb) {
-        writePb(finalTime)
+        writePb(raceFeet, finalTime)
         setPbMs(finalTime)
-        pbRef.current = finalTime
+        pbRef.current[raceFeet] = finalTime
       }
 
       const isRecord =
@@ -503,10 +666,11 @@ function Home() {
       sfx.buzz(isRecord ? [25, 40, 25, 40, 120] : [35, 50, 70])
 
       setElapsedMs(finalTime)
-      setProgressFeet(TOTAL_FEET)
+      setProgressFeet(raceFeet)
       setAnnouncement(`Finished — ${formatTime(finalTime)}`)
       setLastResult({
         timeMs: finalTime,
+        eventFeet: raceFeet,
         splitsMs: splits.slice(),
         topFtps: topVelocity,
         windAssisted,
@@ -522,15 +686,18 @@ function Home() {
       setRaceStatus('finished')
     }
 
-    const finishIfDone = (currentMaxScroll: number) => {
-      if (currentMaxScroll > 0 && currentMaxScroll - window.scrollY <= 2) {
+    // The rAF path passes the y it already read this frame so the style
+    // writes above it never precede a fresh layout read; the scroll-listener
+    // path reads fresh because it runs outside the frame.
+    const finishIfDone = (currentMaxScroll: number, currentY: number) => {
+      if (currentMaxScroll > 0 && currentMaxScroll - currentY <= 2) {
         finishRace()
       }
     }
 
     // Registered directly as a scroll listener — must take no parameters so
     // the Event argument can't shadow the cached maxScroll.
-    const checkFinish = () => finishIfDone(maxScroll)
+    const checkFinish = () => finishIfDone(maxScroll, window.scrollY)
 
     // iOS Safari does not reliably honor overscroll-behavior on the root
     // scroller, so while racing, a downward drag from the very top is
@@ -572,13 +739,15 @@ function Home() {
 
       const elapsed = Math.max(now - startTimeRef.current, 0)
       const y = window.scrollY
-      const feet = maxScroll === 0 ? 0 : clamp(y / maxScroll, 0, 1) * TOTAL_FEET
+      const percent =
+        maxScroll === 0 ? 0 : clamp(y / maxScroll, 0, 1) * PERCENT_STEPS
+      const feet = (percent / PERCENT_STEPS) * raceFeet
 
-      // Per-foot splits. A fling that skips feet fills every skipped foot
+      // Per-percent splits. A fling that skips marks fills every skipped one
       // with the same timestamp, so the array is always complete.
-      while (lastFoot < Math.floor(feet)) {
-        lastFoot += 1
-        splits[lastFoot] = elapsed
+      while (lastPercentMark < Math.floor(percent)) {
+        lastPercentMark += 1
+        splits[lastPercentMark] = elapsed
       }
 
       const dt = now - lastTs
@@ -591,36 +760,46 @@ function Home() {
         topVelocity = Math.max(topVelocity, velocity)
       }
 
-      if (
-        Math.abs(dy) >
-        Math.max(viewportHeight * MAX_FRAME_JUMP_VH, MIN_FRAME_JUMP_PX)
-      ) {
+      // A stall concentrates several frames of legit momentum into one
+      // sample; scale the teleport gate by the frame gap (capped) so jank
+      // doesn't read as cheating. A real End-key jump lands inside one
+      // ~16.7ms frame and still trips the unscaled threshold; scripted fast
+      // finishes remain backstopped by the minLegitMs time floor.
+      const jumpAllowance =
+        Math.max(viewportHeight * MAX_FRAME_JUMP_VH, MIN_FRAME_JUMP_PX) *
+        Math.min(
+          Math.max(dt, FRAME_BUDGET_MS) / FRAME_BUDGET_MS,
+          MAX_JANK_SCALE,
+        )
+
+      if (Math.abs(dy) > jumpAllowance) {
         windAssisted = true
       }
 
       lastY = y
       lastTs = now
 
-      const crossed = MILESTONES.filter(
-        (milestone) => prevFeet < milestone && feet >= milestone,
+      const crossed = MILESTONE_PERCENTS.filter(
+        (milestone) => prevPercent < milestone && percent >= milestone,
       )
 
       if (crossed.length > 0) {
         const lastCrossed = crossed[crossed.length - 1]
+        const crossedFeet = Math.round((lastCrossed / PERCENT_STEPS) * raceFeet)
 
         setPassedMilestones((prev) => [...new Set([...prev, ...crossed])])
 
         if (!reducedMotionRef.current) {
-          setMilestoneHit({ feet: lastCrossed, key: now })
+          setMilestoneHit({ feet: crossedFeet, key: now })
         }
 
         // Screen-reader cue must not depend on the visual-motion gate above.
-        setAnnouncement(`${lastCrossed} feet`)
+        setAnnouncement(`${crossedFeet} feet`)
         sfx.milestoneTick(lastCrossed)
         sfx.buzz(18)
       }
 
-      prevFeet = feet
+      prevPercent = percent
 
       const lines = speedLinesRef.current
 
@@ -639,27 +818,27 @@ function Home() {
       }
 
       if (plan) {
-        const ghostFeet =
+        const ghostPercent =
           plan.kind === 'challenge'
-            ? Math.min(elapsed / plan.totalMs, 1) * TOTAL_FEET
-            : feetAtTime(plan.splitsMs, plan.totalMs, elapsed)
+            ? Math.min(elapsed / plan.totalMs, 1) * PERCENT_STEPS
+            : percentAtTime(plan.splitsMs, plan.totalMs, elapsed)
 
         if (ghostRef.current) {
           // The challenger line is offset so it crosses the finish tape at
           // exactly the challenge time, matching the player's own win
           // condition (viewport bottom reaching page bottom). The PB ghost is
-          // positioned in feet so it stays fair even if the px/in calibration
-          // changed since the PB run — that is intentional, not a bug.
+          // positioned by course percent so it stays fair even if the px/in
+          // calibration changed since the PB run — intentional, not a bug.
           const ghostTop =
             plan.kind === 'challenge'
-              ? (ghostFeet / TOTAL_FEET) * maxScroll + viewportHeight - 44
-              : ghostFeet * pixelsPerFoot
+              ? (ghostPercent / PERCENT_STEPS) * maxScroll + viewportHeight - 44
+              : (ghostPercent / PERCENT_STEPS) * raceFeet * pixelsPerFoot
 
           ghostRef.current.style.transform = `translateY(${ghostTop}px)`
         }
 
         if (ghostDotRef.current) {
-          ghostDotRef.current.style.left = `${ghostFeet}%`
+          ghostDotRef.current.style.left = `${ghostPercent}%`
         }
 
         if (now - deltaUpdateAtRef.current >= DELTA_UPDATE_INTERVAL_MS) {
@@ -670,7 +849,7 @@ function Home() {
               ? maxScroll === 0
                 ? 0
                 : (y / maxScroll) * plan.totalMs - elapsed
-              : timeAtFeet(plan.splitsMs, plan.totalMs, feet) - elapsed
+              : timeAtPercent(plan.splitsMs, plan.totalMs, percent) - elapsed
 
           if (Math.abs(deltaMs) > DELTA_SIGN_HYSTERESIS_MS) {
             deltaSignRef.current = deltaMs >= 0 ? 1 : -1
@@ -683,7 +862,7 @@ function Home() {
       // Both setters batch into a single React commit per frame.
       setElapsedMs(elapsed)
       setProgressFeet(Number(feet.toFixed(1)))
-      finishIfDone(maxScroll)
+      finishIfDone(maxScroll, y)
       frameId = window.requestAnimationFrame(updateTimer)
     }
 
@@ -703,7 +882,8 @@ function Home() {
     }
     // reducedMotion is intentionally read via ref: a mid-race preference
     // change must not restart this effect (it would reset the clock).
-  }, [raceStatus, pixelsPerFoot, ghostPlan])
+    // activeEventFeet and pixelsPerFoot only change on the intro screen.
+  }, [raceStatus, pixelsPerFoot, ghostPlan, activeEventFeet])
 
   const beginCountdown = useCallback(() => {
     // Must stay synchronous in the click handler: iOS/Chrome gate audio on a
@@ -722,6 +902,10 @@ function Home() {
     setLastSavedId(null)
     setAnnouncement('')
     setShareFallback(null)
+    setGlobalRank(null)
+    // Drop any in-flight world-board submit from the previous run so a late
+    // response can't pin run N's rank onto run N+1's finish panel.
+    submittedResultRef.current = null
     raceChallengeRef.current = challenge
     boardBestAtStartRef.current = leaderboard[0]?.timeMs ?? null
 
@@ -770,22 +954,68 @@ function Home() {
 
       const entry: LeaderboardEntry = {
         id: createEntryId(),
-        name: clipName(name.trim()) || 'Anonymous',
+        // Skipping the form earns a deadpan bib name, not "Anonymous".
+        name: clipName(name.trim()) || randomRacerName(),
         timeMs: lastResult.timeMs,
         completedAt: new Date().toISOString(),
         splitsMs: lastResult.splitsMs,
+        eventFeet: lastResult.eventFeet,
+        ppi: pixelsPerInch,
+        device: detectDevice(),
       }
       const nextLeaderboard = [...leaderboard, entry]
         .sort((left, right) => left.timeMs - right.timeMs)
         .slice(0, MAX_LEADERBOARD_ENTRIES)
 
       setLeaderboard(nextLeaderboard)
-      writeLeaderboard(nextLeaderboard)
+      writeLeaderboard(lastResult.eventFeet, nextLeaderboard)
       setHasSaved(true)
       setLastSavedId(entry.id)
       setSavedName(entry.name)
       setPlayerName(entry.name)
       writeStoredName(entry.name)
+
+      // Saving publishes to the world board too (once per result). The form
+      // copy discloses this; wind-assisted runs never reach saveEntry. A
+      // rapid Run-it-back rhythm can trip the server cooldown, so a 429
+      // earns exactly one delayed retry — and every callback checks the ref
+      // so a response landing after the next race starts is dropped.
+      if (submittedResultRef.current !== lastResult) {
+        submittedResultRef.current = lastResult
+
+        const submission = {
+          name: entry.name,
+          timeMs: lastResult.timeMs,
+          eventFeet: lastResult.eventFeet,
+          splitsMs: lastResult.splitsMs,
+          ppi: pixelsPerInch,
+          device: detectDevice(),
+        }
+
+        const postRun = (attempt: number) => {
+          void submitToGlobalBoard(submission).then((result) => {
+            if (submittedResultRef.current !== lastResult) {
+              return
+            }
+
+            if (result === 'rate-limited' && attempt === 0) {
+              window.setTimeout(() => {
+                if (submittedResultRef.current === lastResult) {
+                  postRun(1)
+                }
+              }, SUBMIT_COOLDOWN_MS + 500)
+
+              return
+            }
+
+            if (result && result !== 'rate-limited') {
+              setGlobalRank(result.rank)
+            }
+          })
+        }
+
+        postRun(0)
+      }
 
       // A won challenge is settled: clear the params so future shares don't
       // carry a stale ?beat. A lost one stays standing for retries.
@@ -793,8 +1023,13 @@ function Home() {
         lastResult.challenge &&
         lastResult.timeMs < lastResult.challenge.timeMs
       ) {
+        // Adopt the challenge's event as the local selection first so
+        // clearing ?event doesn't snap the course to a different distance
+        // while the finish panel is up.
+        setEventFeet(lastResult.eventFeet)
+        writeStoredEventFeet(lastResult.eventFeet)
         void navigate({
-          search: { beat: undefined, by: undefined },
+          search: { beat: undefined, by: undefined, event: undefined },
           replace: true,
           // Without this, scroll restoration yanks the player from the
           // finish panel back to the top of the course mid-celebration.
@@ -802,7 +1037,7 @@ function Home() {
         })
       }
     },
-    [lastResult, leaderboard, navigate],
+    [lastResult, leaderboard, navigate, pixelsPerInch],
   )
 
   // Zero-tap auto-save: returning players are on the board the moment they
@@ -882,13 +1117,13 @@ function Home() {
     const trimmed = clipName(playerName.trim())
 
     if (hasSaved && lastSavedId) {
-      const name = trimmed || 'Anonymous'
+      const name = trimmed || randomRacerName()
       const nextLeaderboard = leaderboard.map((entry) =>
         entry.id === lastSavedId ? { ...entry, name } : entry,
       )
 
       setLeaderboard(nextLeaderboard)
-      writeLeaderboard(nextLeaderboard)
+      writeLeaderboard(lastResult.eventFeet, nextLeaderboard)
       setSavedName(name)
       setPlayerName(name)
       writeStoredName(name)
@@ -913,6 +1148,7 @@ function Home() {
         timeMs: lastResult.timeMs,
         splitsMs: lastResult.splitsMs,
         origin: window.location.origin,
+        eventFeet: lastResult.eventFeet,
         playerName: savedName || undefined,
         streakDays: lastResult.streakDays,
         windAssisted: lastResult.windAssisted,
@@ -950,6 +1186,55 @@ function Home() {
   const toggleSound = () => {
     sfx.setMuted(soundOn)
     setSoundOn(!soundOn)
+  }
+
+  const selectEvent = (feet: number) => {
+    // Re-clicking the checked radio is a no-op — it must not silently
+    // dismiss a pending challenge.
+    if (feet === activeEventFeet) {
+      return
+    }
+
+    setEventFeet(feet)
+    writeStoredEventFeet(feet)
+
+    // Picking a different event dismisses a pending challenge: the slip and
+    // the pinned distance both came from the link.
+    if (search.beat !== undefined || search.event !== undefined) {
+      void navigate({
+        search: { beat: undefined, by: undefined, event: undefined },
+        replace: true,
+        resetScroll: false,
+      })
+    }
+  }
+
+  // WAI-ARIA radiogroup keyboard model: one tab stop, arrows move selection.
+  const eventOptionRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const onEventPickerKeyDown = (event: React.KeyboardEvent) => {
+    const current = EVENTS.findIndex(
+      (raceEvent) => raceEvent.feet === activeEventFeet,
+    )
+    let next = -1
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      next = (current + 1) % EVENTS.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      next = (current - 1 + EVENTS.length) % EVENTS.length
+    } else if (event.key === 'Home') {
+      next = 0
+    } else if (event.key === 'End') {
+      next = EVENTS.length - 1
+    }
+
+    if (next === -1) {
+      return
+    }
+
+    // Arrows/Home/End otherwise scroll the document — bad in a scroll game.
+    event.preventDefault()
+    selectEvent(EVENTS[next].feet)
+    eventOptionRefs.current[next]?.focus()
   }
 
   const updatePixelsPerInch = (nextValue: number) => {
@@ -994,7 +1279,7 @@ function Home() {
             <span className="hudTrack">
               <progress
                 value={progressFeet}
-                max={TOTAL_FEET}
+                max={activeEventFeet}
                 aria-label="Race progress"
               />
               {ghostPlan ? (
@@ -1069,7 +1354,10 @@ function Home() {
         </>
       ) : null}
 
-      <section className="raceCourse" aria-label="100-foot scroll race course">
+      <section
+        className="raceCourse"
+        aria-label={`${activeEventFeet}-foot scroll race course`}
+      >
         <RulerRail ticks={ticks} />
 
         <div className="raceLane" aria-hidden="true" />
@@ -1087,11 +1375,12 @@ function Home() {
           </p>
         </div>
 
-        <DecadeMarks pixelsPerFoot={pixelsPerFoot} />
+        <DecadeMarks eventFeet={activeEventFeet} courseHeight={courseHeight} />
 
         <MilestoneGates
           passed={passedMilestones}
-          pixelsPerFoot={pixelsPerFoot}
+          eventFeet={activeEventFeet}
+          courseHeight={courseHeight}
         />
 
         {ghostPlan && (raceStatus === 'racing' || raceStatus === 'finished') ? (
@@ -1131,7 +1420,9 @@ function Home() {
                 ) : lastResult.isRecord ? (
                   <p className="recordBadge">★ New record</p>
                 ) : (
-                  <p className="rankStamp">{rankTitle(lastResult.timeMs)}</p>
+                  <p className="rankStamp">
+                    {rankTitle(lastResult.timeMs, lastResult.eventFeet)}
+                  </p>
                 )}
                 {!lastResult.windAssisted &&
                 !lastResult.isRecord &&
@@ -1169,16 +1460,26 @@ function Home() {
                       </p>
                     )}
                     <p className="percentileLine">
-                      Faster than {fasterThanPercent(lastResult.timeMs)}% of
-                      thumbs
+                      Faster than{' '}
+                      {fasterThanPercent(
+                        lastResult.timeMs,
+                        lastResult.eventFeet,
+                      )}
+                      % of thumbs
                     </p>
                     <ul className="funFacts">
                       <li>
                         Average thumb speed:{' '}
-                        {averageMph(lastResult.timeMs).toFixed(1)} mph
+                        {averageMph(
+                          lastResult.timeMs,
+                          lastResult.eventFeet,
+                        ).toFixed(1)}{' '}
+                        mph
                       </li>
                       <li>{speedTicketLine(ftpsToMph(lastResult.topFtps))}</li>
-                      <li>{unitLine(lastResult.runNumber)}</li>
+                      <li>
+                        {unitLine(lastResult.runNumber, lastResult.eventFeet)}
+                      </li>
                     </ul>
                   </>
                 )}
@@ -1228,6 +1529,7 @@ function Home() {
                     {savedRank ? 'On the board as ' : 'Saved as '}
                     <strong>{savedEntry?.name ?? savedName}</strong>
                     {savedRank ? ` · #${savedRank}` : ' — outside the top 10'}
+                    {globalRank ? ` · #${globalRank} worldwide` : ''}
                     <button
                       className="textButton"
                       type="button"
@@ -1257,15 +1559,20 @@ function Home() {
                       <Trophy size={18} aria-hidden="true" />
                       {hasSaved ? 'Update name' : 'Save time'}
                     </button>
+                    {hasSaved ? null : (
+                      <p className="saveHint">
+                        Posts to this device and the world board.
+                      </p>
+                    )}
                   </form>
                 )}
                 <button className="backLink" type="button" onClick={resetToTop}>
-                  ↑ Back to the start
+                  Back to the start
                 </button>
               </>
             ) : (
               <>
-                <p className="eyebrow">100 ft</p>
+                <p className="eyebrow">{activeEventFeet} ft</p>
                 <h2 id="finish-title">Finish line</h2>
                 <p className="finishHint">Cross the tape to stop the clock.</p>
               </>
@@ -1289,50 +1596,63 @@ function Home() {
           data-returning={runCount > 0 ? '' : undefined}
         >
           <div className="introGrain" aria-hidden="true" />
+          <p className="meetBanner" aria-hidden="true">
+            <span className="meetBannerTrack">
+              <span>{MEET_BANNER_TEXT}</span>
+              <span>{MEET_BANNER_TEXT}</span>
+            </span>
+          </p>
           <div className="introInner">
             <div className="introMain">
               <div className="introTape" aria-hidden="true" />
-              <p className="introEyebrow">100-foot scroll sprint</p>
+              <p className="introEyebrow">The thumb athletics championship</p>
               <h1 className="introTitle">
-                <span
-                  className="titleLine"
-                  style={{ '--tilt': '-0.6deg' } as TiltStyle}
-                >
-                  Scroll
-                </span>
-                <span
-                  className="titleLine titleLine-accent"
-                  style={{ '--tilt': '0.8deg' } as TiltStyle}
-                >
-                  Race
-                </span>
-                <span className="inkStamp" aria-hidden="true">
-                  EST. 100 FT
-                </span>
+                <span className="titleLine">Scroll</span>
+                <span className="titleLine titleLine-accent">Race</span>
               </h1>
-              <p className="introDesc">
-                Scroll 100 feet of ruler as fast as your thumb allows.
-              </p>
-              <ol className="introSteps" aria-label="How to play">
-                <li>Tap start</li>
-                <li>3 · 2 · 1</li>
-                <li>Fling!</li>
-              </ol>
               {challenge ? (
                 <div className="challengeSlip">
                   <p className="eyebrow">Challenge received</p>
                   <p className="challengeSlipBody">
-                    <strong>{challenge.name}</strong> scrolled 100 ft in{' '}
+                    <strong>{challenge.name}</strong> scrolled{' '}
+                    {challenge.eventFeet} ft in{' '}
                     <strong>{formatTime(challenge.timeMs)}</strong>. Think
                     you’re faster?
                   </p>
                 </div>
               ) : null}
+              <p className="introDesc">
+                Scroll {activeEventFeet} feet of ruler as fast as your thumb
+                allows.
+              </p>
+              <div
+                className="eventPicker"
+                role="radiogroup"
+                aria-label="Event distance"
+                onKeyDown={onEventPickerKeyDown}
+              >
+                {EVENTS.map((event, index) => (
+                  <button
+                    key={event.feet}
+                    type="button"
+                    role="radio"
+                    aria-checked={activeEventFeet === event.feet}
+                    tabIndex={activeEventFeet === event.feet ? 0 : -1}
+                    ref={(element) => {
+                      eventOptionRefs.current[index] = element
+                    }}
+                    className={`eventOption${
+                      activeEventFeet === event.feet ? ' isSelected' : ''
+                    }`}
+                    onClick={() => selectEvent(event.feet)}
+                  >
+                    <strong>{event.feet} ft</strong>
+                    <span>{event.name}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="eventTagline">{activeEvent.tagline}</p>
               <div className="introStats">
-                <div className="introStat">
-                  <span>Distance</span>
-                  <strong>100 ft</strong>
-                </div>
                 <div className="introStat">
                   <span>{pbMs ? 'Your best' : 'Best time'}</span>
                   <strong
@@ -1346,8 +1666,12 @@ function Home() {
                   </strong>
                 </div>
                 <div className="introStat">
-                  <span>Racers</span>
-                  <strong>{leaderboard.length}</strong>
+                  <span>Runs</span>
+                  <strong>
+                    {globalBoard.status === 'ready'
+                      ? globalBoard.total.toLocaleString()
+                      : leaderboard.length}
+                  </strong>
                 </div>
                 {challenge ? (
                   <div className="introStat">
@@ -1385,12 +1709,34 @@ function Home() {
                       : 'Start race'}
                 </button>
               </div>
-              <details className="calibrate">
-                <summary>
+              <div className="utilityRow">
+                <button
+                  className="calibrateToggle"
+                  type="button"
+                  aria-expanded={calibrateOpen}
+                  aria-controls="calibrate-panel"
+                  onClick={() => setCalibrateOpen((open) => !open)}
+                >
                   <Ruler size={15} aria-hidden="true" />
-                  Calibrate ruler to your screen
-                </summary>
-                <div className="calibrateBody">
+                  Calibrate
+                </button>
+                <button
+                  className="soundToggle"
+                  type="button"
+                  aria-pressed={soundOn}
+                  aria-label="Sound"
+                  title={soundOn ? 'Mute sounds' : 'Unmute sounds'}
+                  onClick={toggleSound}
+                >
+                  {soundOn ? (
+                    <Volume2 size={16} aria-hidden="true" />
+                  ) : (
+                    <VolumeX size={16} aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+              {calibrateOpen ? (
+                <div className="calibrateBody" id="calibrate-panel">
                   <div className="scaleSample" aria-hidden="true">
                     <span className="scaleSampleBar" />
                     <span>1 in</span>
@@ -1422,33 +1768,81 @@ function Home() {
                     </button>
                   </div>
                 </div>
-              </details>
-              <button
-                className="soundToggle"
-                type="button"
-                aria-pressed={soundOn}
-                onClick={toggleSound}
-              >
-                Sound: {soundOn ? 'on' : 'off'}
-              </button>
+              ) : null}
               <p className="printRow" aria-hidden="true">
-                SCROLL RACE · REV C · 1200 IN. · LANE 1 OF 1 · PRINTED ON
-                RECYCLED PHOTONS
+                SCROLL RACE · REV D · {activeEventFeet * 12} IN. · LANE 1 OF 1 ·
+                PRINTED ON RECYCLED PHOTONS
               </p>
             </div>
 
             <aside className="introBoard" aria-labelledby="leaderboard-title">
-              <h2 id="leaderboard-title">
-                <Trophy size={18} aria-hidden="true" />
-                Leaderboard
-              </h2>
-              <Leaderboard
-                entries={leaderboard}
-                justSavedId={lastSavedId}
-                onGlowEnd={() => setLastSavedId(null)}
-              />
+              <div className="boardHead">
+                <h2 id="leaderboard-title">
+                  <Trophy size={18} aria-hidden="true" />
+                  Leaderboard
+                </h2>
+                <div className="boardTabs">
+                  <button
+                    type="button"
+                    className={`boardTab${boardTab === 'world' ? ' isActive' : ''}`}
+                    aria-pressed={boardTab === 'world'}
+                    onClick={() => setBoardTab('world')}
+                  >
+                    World
+                  </button>
+                  <button
+                    type="button"
+                    className={`boardTab${boardTab === 'device' ? ' isActive' : ''}`}
+                    aria-pressed={boardTab === 'device'}
+                    onClick={() => setBoardTab('device')}
+                  >
+                    This device
+                  </button>
+                </div>
+              </div>
+              <p className="boardSub">
+                {activeEventFeet} FT · {activeEvent.name.toUpperCase()}
+              </p>
+              {boardTab === 'world' ? (
+                <WorldBoard state={globalBoard} fallbackEntries={leaderboard} />
+              ) : (
+                <Leaderboard
+                  entries={leaderboard}
+                  justSavedId={lastSavedId}
+                  onGlowEnd={() => setLastSavedId(null)}
+                />
+              )}
             </aside>
           </div>
+          <footer className="siteFooter">
+            <p>Created by JP Mitra</p>
+            <nav className="creditLinks" aria-label="Creator links">
+              {CREDIT_LINKS.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={link.label}
+                  title={link.label}
+                >
+                  {link.brand ? (
+                    <svg
+                      viewBox="0 0 24 24"
+                      width={17}
+                      height={17}
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path d={BRAND_PATHS[link.brand]} />
+                    </svg>
+                  ) : (
+                    <Globe size={17} aria-hidden="true" />
+                  )}
+                </a>
+              ))}
+            </nav>
+          </footer>
         </div>
       ) : null}
 
@@ -1499,25 +1893,24 @@ const RulerRail = memo(function RulerRail({
 })
 
 const DecadeMarks = memo(function DecadeMarks({
-  pixelsPerFoot,
+  eventFeet,
+  courseHeight,
 }: {
-  pixelsPerFoot: number
+  eventFeet: number
+  courseHeight: number
 }) {
   return (
     <>
-      {DECADE_MARKS.map((mark, index) => (
+      {DECADE_MARKS.map((mark) => (
         <div
-          className={`decadeMark${mark.feet >= 80 ? ' decadeMark-dark' : ''}${mark.feet === 90 ? ' decadeMark-send' : ''}`}
-          key={mark.feet}
-          style={
-            {
-              top: `${mark.feet * pixelsPerFoot}px`,
-              '--tilt': `${index % 2 ? 1.4 : -1.8}deg`,
-            } as TiltStyle
-          }
+          className={`decadeMark${mark.percent >= 80 ? ' decadeMark-dark' : ''}${mark.percent === 90 ? ' decadeMark-send' : ''}`}
+          key={mark.percent}
+          style={{ top: `${(mark.percent / PERCENT_STEPS) * courseHeight}px` }}
           aria-hidden="true"
         >
-          <span>{mark.feet} FT</span>
+          <span>
+            {Math.round((mark.percent / PERCENT_STEPS) * eventFeet)} FT
+          </span>
           <strong>{mark.copy}</strong>
         </div>
       ))}
@@ -1527,21 +1920,23 @@ const DecadeMarks = memo(function DecadeMarks({
 
 const MilestoneGates = memo(function MilestoneGates({
   passed,
-  pixelsPerFoot,
+  eventFeet,
+  courseHeight,
 }: {
   passed: Array<number>
-  pixelsPerFoot: number
+  eventFeet: number
+  courseHeight: number
 }) {
   return (
     <>
-      {MILESTONES.map((feet) => (
+      {MILESTONE_PERCENTS.map((percent) => (
         <div
           className="milestone"
-          key={feet}
-          data-passed={passed.includes(feet) ? '' : undefined}
-          style={{ top: `${feet * pixelsPerFoot}px` }}
+          key={percent}
+          data-passed={passed.includes(percent) ? '' : undefined}
+          style={{ top: `${(percent / PERCENT_STEPS) * courseHeight}px` }}
         >
-          <span>{feet} ft</span>
+          <span>{Math.round((percent / PERCENT_STEPS) * eventFeet)} ft</span>
         </div>
       ))}
     </>
@@ -1597,6 +1992,85 @@ function verdictLine(result: RaceResult, challenge: Challenge) {
   return `${challenge.name} survives — you were ${(Math.abs(diff) / 1000).toFixed(2)}s short.`
 }
 
+// The world tab: live top-10 from the leaderboard function, with this
+// device's board as the graceful fallback when the network isn't there.
+function WorldBoard({
+  state,
+  fallbackEntries,
+}: {
+  state: GlobalBoardState
+  fallbackEntries: Array<LeaderboardEntry>
+}) {
+  if (state.status === 'loading') {
+    return (
+      <ol className="leaderboardList" aria-label="World leaderboard loading">
+        {[1, 2, 3].map((rank) => (
+          <li className="ghostRow" key={rank}>
+            <span className="leaderboardRank">{rank}</span>
+            <span className="leaderboardName">…</span>
+            <span className="leaderboardTime">--.--s</span>
+          </li>
+        ))}
+      </ol>
+    )
+  }
+
+  if (state.status === 'error') {
+    return (
+      <>
+        <p className="boardNote">
+          World board unreachable — showing this device.
+        </p>
+        <Leaderboard entries={fallbackEntries} />
+      </>
+    )
+  }
+
+  if (state.entries.length === 0) {
+    return (
+      <>
+        <p className="emptyBoardTitle">The world record is wide open.</p>
+        <ol className="leaderboardList">
+          {['Your name here', '—', '—'].map((name, index) => (
+            <li className="ghostRow" key={index}>
+              <span className="leaderboardRank">{index + 1}</span>
+              <span className="leaderboardName">{name}</span>
+              <span className="leaderboardTime">--.--s</span>
+            </li>
+          ))}
+        </ol>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <ol className="leaderboardList">
+        {state.entries.slice(0, 10).map((entry, index) => (
+          <li key={entry.id} data-medal={index < 3 ? index + 1 : undefined}>
+            <span className="leaderboardRank">{index + 1}</span>
+            <span className="leaderboardName">
+              <span className="leaderboardPlayer">{entry.name}</span>
+              <span className="leaderboardMeta">
+                {[entry.device, entry.country]
+                  .filter((part) => part && part !== 'Unknown')
+                  .join(' · ')}
+              </span>
+            </span>
+            <span className="leaderboardTime">{formatTime(entry.timeMs)}</span>
+          </li>
+        ))}
+      </ol>
+      {state.total > 0 ? (
+        <p className="boardTotal">
+          {state.total.toLocaleString()} run{state.total === 1 ? '' : 's'}{' '}
+          worldwide
+        </p>
+      ) : null}
+    </>
+  )
+}
+
 function Leaderboard({
   entries,
   justSavedId,
@@ -1633,7 +2107,9 @@ function Leaderboard({
           onAnimationEnd={entry.id === justSavedId ? onGlowEnd : undefined}
         >
           <span className="leaderboardRank">{index + 1}</span>
-          <span className="leaderboardName">{entry.name}</span>
+          <span className="leaderboardName">
+            <span className="leaderboardPlayer">{entry.name}</span>
+          </span>
           <span className="leaderboardTime">{formatTime(entry.timeMs)}</span>
         </li>
       ))}
@@ -1766,13 +2242,22 @@ function ConfettiBurst() {
 
 export function createRulerTicks(
   pixelsPerInch = CSS_PIXELS_PER_INCH,
+  event: RaceEvent = EVENTS[0],
 ): Array<RulerTick> {
-  return Array.from({ length: TOTAL_FEET * INCHES_PER_FOOT + 1 }, (_, inch) => {
+  // Tick spacing coarsens with course length so the DOM stays ~1,200 nodes:
+  // every inch at 100 ft, every foot at 1000 ft.
+  const tickCount =
+    Math.floor((event.feet * INCHES_PER_FOOT) / event.tickEveryInches) + 1
+
+  return Array.from({ length: tickCount }, (_, index) => {
+    const inch = index * event.tickEveryInches
     const wholeFeet = Math.floor(inch / INCHES_PER_FOOT)
     const inchInFoot = inch % INCHES_PER_FOOT
     const kind =
       inchInFoot === 0
-        ? 'foot'
+        ? wholeFeet % event.majorTickFeet === 0
+          ? 'foot'
+          : 'half'
         : inchInFoot === 6
           ? 'half'
           : inchInFoot % 3 === 0
@@ -1784,7 +2269,9 @@ export function createRulerTicks(
       top: inch * pixelsPerInch,
       kind,
       label:
-        inchInFoot === 0 && wholeFeet % 5 === 0 ? `${wholeFeet} ft` : undefined,
+        inchInFoot === 0 && wholeFeet % event.labelEveryFeet === 0
+          ? `${wholeFeet} ft`
+          : undefined,
     }
   })
 }
@@ -1820,13 +2307,19 @@ function writePixelsPerInch(pixelsPerInch: number) {
   )
 }
 
-function readLeaderboard(): Array<LeaderboardEntry> {
+function readLeaderboard(eventFeet: number): Array<LeaderboardEntry> {
   if (typeof window === 'undefined') {
     return []
   }
 
   try {
-    const rawLeaderboard = window.localStorage.getItem(STORAGE_KEY)
+    // Boards saved before events existed migrate to the 100 ft event, whose
+    // per-foot splits are identical to per-percent splits.
+    const rawLeaderboard =
+      window.localStorage.getItem(leaderboardKey(eventFeet)) ??
+      (eventFeet === DEFAULT_EVENT_FEET
+        ? window.localStorage.getItem(LEGACY_LEADERBOARD_KEY)
+        : null)
 
     if (!rawLeaderboard) {
       return []
@@ -1853,13 +2346,16 @@ function readLeaderboard(): Array<LeaderboardEntry> {
   }
 }
 
-function writeLeaderboard(entries: Array<LeaderboardEntry>) {
+function writeLeaderboard(eventFeet: number, entries: Array<LeaderboardEntry>) {
   if (typeof window === 'undefined') {
     return
   }
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
+    window.localStorage.setItem(
+      leaderboardKey(eventFeet),
+      JSON.stringify(entries),
+    )
   } catch {
     return
   }
@@ -1886,13 +2382,17 @@ function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
   )
 }
 
-function readPb(): number | null {
+function readPb(eventFeet: number): number | null {
   if (typeof window === 'undefined') {
     return null
   }
 
   try {
-    const raw = window.localStorage.getItem(PB_STORAGE_KEY)
+    const raw =
+      window.localStorage.getItem(pbKey(eventFeet)) ??
+      (eventFeet === DEFAULT_EVENT_FEET
+        ? window.localStorage.getItem(LEGACY_PB_KEY)
+        : null)
     const value = raw === null ? Number.NaN : Number(raw)
 
     return Number.isFinite(value) && value > 0 ? value : null
@@ -1901,12 +2401,70 @@ function readPb(): number | null {
   }
 }
 
-function writePb(timeMs: number) {
+function writePb(eventFeet: number, timeMs: number) {
   try {
-    window.localStorage.setItem(PB_STORAGE_KEY, String(timeMs))
+    window.localStorage.setItem(pbKey(eventFeet), String(timeMs))
   } catch {
     return
   }
+}
+
+function readStoredEventFeet() {
+  if (typeof window === 'undefined') {
+    return DEFAULT_EVENT_FEET
+  }
+
+  try {
+    return (
+      parseEventFeet(window.localStorage.getItem(EVENT_STORAGE_KEY)) ??
+      DEFAULT_EVENT_FEET
+    )
+  } catch {
+    return DEFAULT_EVENT_FEET
+  }
+}
+
+function writeStoredEventFeet(eventFeet: number) {
+  try {
+    window.localStorage.setItem(EVENT_STORAGE_KEY, String(eventFeet))
+  } catch {
+    return
+  }
+}
+
+// Coarse device class for leaderboard metadata — never anything
+// fingerprint-y, just enough for "set on an iPhone" context.
+function detectDevice() {
+  if (typeof navigator === 'undefined') {
+    return 'Unknown'
+  }
+
+  const ua = navigator.userAgent
+
+  if (/iPhone/i.test(ua)) {
+    return 'iPhone'
+  }
+
+  if (
+    /iPad/i.test(ua) ||
+    (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+  ) {
+    return 'iPad'
+  }
+
+  if (/Android/i.test(ua)) {
+    return 'Android'
+  }
+
+  if (/Windows/i.test(ua)) {
+    return 'Windows'
+  }
+
+  if (/Macintosh/i.test(ua)) {
+    return 'Mac'
+  }
+
+  return 'Other'
 }
 
 function readStoredName() {

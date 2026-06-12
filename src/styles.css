@@ -17,9 +17,18 @@
   --cream: #fffaf0;
   --panel-dark: #141c18;
 
-  --font-display: 'Big Shoulders Display', 'Arial Narrow', sans-serif;
-  --font-body: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'Spline Sans Mono', ui-monospace, monospace;
+  --font-display:
+    'Barlow Condensed', 'Arial Narrow', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Barlow', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Barlow', ui-sans-serif, system-ui, sans-serif;
+
+  /* Championship-programme print language: everything square-aligned, hard
+     offset shadows like misregistered print plates — no blur, no rotation. */
+  --radius-card: 10px;
+  --radius-control: 6px;
+  --press-border: 2px solid var(--ink);
+  --press-shadow: 4px 4px 0 0 var(--ink);
+  --press-shadow-lg: 6px 6px 0 0 var(--ink);
 
   /* feTurbulence grain, reused by intro + finish atmospheres */
   --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -96,7 +105,7 @@ button {
      scrolled frame for the whole race, and at this alpha it's invisible. */
   background: rgba(15, 23, 20, 0.96);
   border: 1px solid rgba(249, 245, 232, 0.16);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.32);
   animation: hudDrop 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -176,16 +185,16 @@ button {
   border-radius: 8px;
 }
 
-/* The ghost's position mirrored onto the progress bar: two dots racing. */
+/* The ghost's position mirrored onto the progress bar: two markers racing. */
 .hudGhostDot {
   position: absolute;
   top: 50%;
   left: 0;
-  width: 8px;
-  height: 8px;
-  background: rgba(249, 245, 232, 0.75);
-  opacity: 0.7;
-  transform: translate(-50%, -50%) rotate(45deg);
+  width: 4px;
+  height: 14px;
+  background: rgba(249, 245, 232, 0.85);
+  border-radius: 2px;
+  transform: translate(-50%, -50%);
   pointer-events: none;
 }
 
@@ -194,15 +203,30 @@ button {
 .secondaryButton {
   min-height: 44px;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   font-family: var(--font-display);
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   transition:
     transform 0.12s ease,
-    box-shadow 0.18s ease,
+    box-shadow 0.12s ease,
     filter 0.18s ease;
+}
+
+/* Paper-side buttons get the print-plate treatment: ink border, hard offset
+   shadow, and a physical press on tap. */
+.primaryButton,
+.secondaryButton {
+  border: var(--press-border);
+  box-shadow: var(--press-shadow);
+}
+
+.primaryButton:active,
+.secondaryButton:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 0 var(--ink);
 }
 
 .hudButton {
@@ -212,6 +236,9 @@ button {
   font-size: 1.05rem;
   color: var(--ink);
   background: var(--amber);
+  /* Same press physics as its paper siblings, in a dark-appropriate ink. */
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 0 rgba(0, 0, 0, 0.5);
 }
 
 .hudButton:hover {
@@ -227,7 +254,7 @@ button {
   color: var(--cream);
   background: transparent;
   border: 1px solid rgba(249, 245, 232, 0.25);
-  border-radius: 11px;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 
@@ -235,10 +262,9 @@ button {
   background: rgba(249, 245, 232, 0.08);
 }
 
-.hudButton:active,
-.primaryButton:active,
-.secondaryButton:active {
-  transform: translateY(1px) scale(0.99);
+.hudButton:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 rgba(0, 0, 0, 0.5);
 }
 
 .hudButton:focus-visible,
@@ -249,7 +275,7 @@ button {
 .textButton:focus-visible,
 .soundToggle:focus-visible,
 .saveForm input:focus-visible,
-.calibrate summary:focus-visible {
+.calibrateToggle:focus-visible {
   outline: 3px solid #2e8bd6;
   outline-offset: 3px;
 }
@@ -578,13 +604,15 @@ button {
 .courseStartLine {
   position: relative;
   height: 22px;
+  border: 2px solid var(--ink);
   border-radius: 4px;
+  /* Axis-aligned start stripes — nothing on this course sits at an angle. */
   background: repeating-linear-gradient(
-    45deg,
-    var(--ink) 0 11px,
-    var(--cream) 11px 22px
+    90deg,
+    var(--ink) 0 14px,
+    var(--cream) 14px 28px
   );
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 0 0 rgba(25, 35, 29, 0.16);
 }
 
 .courseStartLabel {
@@ -634,16 +662,14 @@ button {
 
 /* ---------------------------------------------------------- ROAD PAINT --- */
 
-/* Stenciled decade copy painted on the lane. The grain mask punches
-   pixel-holes — worn road paint, not UI chrome. */
+/* Stenciled decade copy painted dead level on the lane grid. The grain mask
+   punches pixel-holes — worn road paint, not UI chrome. */
 .decadeMark {
   position: absolute;
   right: 14px;
   left: calc(var(--rail-width) + 18px);
   z-index: 1;
   pointer-events: none;
-  transform: rotate(var(--tilt));
-  transform-origin: left top;
 }
 
 .decadeMark span {
@@ -741,8 +767,7 @@ button {
 }
 
 .paceGhost-challenge {
-  border-top: 3px solid var(--orange);
-  box-shadow: 0 0 14px rgba(232, 71, 43, 0.55);
+  border-top: 4px solid var(--orange);
 }
 
 .paceGhost-pb {
@@ -802,74 +827,56 @@ button {
   overflow: visible;
 }
 
-/* Both halves carry the identical full-width pattern, so the jagged seam is
-   pixel-perfect until the snap. */
+/* Both halves carry the identical full-width pattern — an axis-aligned
+   checkerboard — so the straight vertical seam at 62% is pixel-perfect
+   until the snap. */
 .tapeHalf {
   position: absolute;
   inset: 0;
   border-top: 3px solid var(--ink);
   border-bottom: 3px solid var(--ink);
-  background:
-    linear-gradient(45deg, var(--ink) 25%, transparent 25% 75%, var(--ink) 75%),
-    linear-gradient(45deg, var(--ink) 25%, transparent 25% 75%, var(--ink) 75%);
-  background-color: var(--cream);
-  background-position:
-    0 0,
-    17px 17px;
-  background-size: 34px 34px;
+  background: repeating-conic-gradient(var(--ink) 0% 25%, var(--cream) 0% 50%) 0
+    0 / 28px 28px;
 }
 
 .tapeHalf-l {
-  clip-path: polygon(
-    0 0,
-    62% 0,
-    60.6% 18%,
-    63.1% 37%,
-    60.9% 56%,
-    62.7% 75%,
-    61.2% 100%,
-    0 100%
-  );
+  clip-path: inset(0 38% 0 0);
 }
 
 .tapeHalf-r {
-  clip-path: polygon(
-    62% 0,
-    100% 0,
-    100% 100%,
-    61.2% 100%,
-    62.7% 75%,
-    60.9% 56%,
-    63.1% 37%,
-    60.6% 18%
-  );
+  clip-path: inset(0 0 0 62%);
 }
 
+/* The snap stays level: the halves part horizontally and drop, no rotation. */
 .scrollRace[data-status='finished'] .tapeHalf-l {
-  transform-origin: 0 100%;
   animation: tapeSnapL 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 .scrollRace[data-status='finished'] .tapeHalf-r {
-  transform-origin: 100% 100%;
   animation: tapeSnapR 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) 0.04s forwards;
 }
 
+/* The halves dissolve as they fall: a translated remnant at the page edge
+   reads as a rendering glitch, so nothing may outlive the snap. */
 @keyframes tapeSnapL {
   30% {
-    transform: translate(-1%, 3px) rotate(2deg);
+    transform: translate(-1.5%, 4px);
+    opacity: 1;
   }
   100% {
-    transform: translate(-3.5%, 20px) rotate(7deg);
+    transform: translate(-6%, 26px);
+    opacity: 0;
   }
 }
 
 @keyframes tapeSnapR {
   30% {
-    transform: translate(1%, 4px) rotate(-3deg);
+    transform: translate(1.5%, 5px);
+    opacity: 1;
   }
   100% {
-    transform: translate(3%, 30px) rotate(-10deg);
+    transform: translate(6%, 32px);
+    opacity: 0;
   }
 }
 
@@ -919,7 +926,9 @@ button {
     radial-gradient(120% 120% at 0% 0%, #1f2a23, var(--panel-dark));
   background-blend-mode: soft-light, normal;
   border: 1px solid rgba(249, 245, 232, 0.16);
-  border-radius: 18px;
+  /* Results-board accent: the same hard orange rule as the leaderboard. */
+  border-top: 6px solid var(--orange);
+  border-radius: var(--radius-card);
   box-shadow: 0 22px 52px rgba(0, 0, 0, 0.34);
   animation: panelRise 0.55s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -953,7 +962,7 @@ button {
   padding: 5px 12px;
   color: var(--ink);
   background: var(--amber);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font-family: var(--font-display);
   font-size: 0.86rem;
   font-weight: 800;
@@ -972,19 +981,18 @@ button {
   }
 }
 
-/* The rubber stamp thunking onto paper. */
+/* The rubber stamp thunking onto paper — dead level, like a bib number. */
 .rankStamp,
 .windStamp {
   display: inline-block;
   margin: 0 10px 10px 0;
   padding: 6px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   font-family: var(--font-display);
   font-size: 1.05rem;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  transform: rotate(-4deg);
   animation: stampThunk 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s backwards;
 }
 
@@ -1001,11 +1009,11 @@ button {
 @keyframes stampThunk {
   0% {
     opacity: 0;
-    transform: scale(2.1) rotate(-12deg);
+    transform: scale(2.1);
   }
   70% {
     opacity: 1;
-    transform: scale(0.95) rotate(-3deg);
+    transform: scale(0.95);
   }
 }
 
@@ -1014,8 +1022,9 @@ button {
   margin: 0 0 10px;
   padding: 4px 10px;
   color: var(--cream);
-  background: var(--ink-2);
-  border-radius: 999px;
+  background: transparent;
+  border: 1px solid rgba(249, 245, 232, 0.45);
+  border-radius: var(--radius-control);
   font-family: var(--font-display);
   font-size: 0.78rem;
   font-weight: 700;
@@ -1043,7 +1052,7 @@ button {
   color: var(--cream);
   background: rgba(249, 245, 232, 0.08);
   border: 1px dashed rgba(249, 245, 232, 0.34);
-  border-radius: 11px;
+  border-radius: var(--radius-control);
   font-family: var(--font-mono);
   font-size: 0.82rem;
   resize: none;
@@ -1161,11 +1170,32 @@ button {
   }
 }
 
+/* Dark results panel: the ink plate can't print on ink. Buttons go flat
+   and trade the plate-drop for a straight press. */
+.finishPanel .primaryButton,
+.finishPanel .secondaryButton {
+  box-shadow: none;
+}
+
+.finishPanel .primaryButton:active,
+.finishPanel .secondaryButton:active {
+  transform: translateY(1px) scale(0.99);
+  box-shadow: none;
+}
+
 .saveForm {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   margin-top: 12px;
+}
+
+.saveHint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: rgba(249, 245, 232, 0.55);
+  font-size: 0.78rem;
+  font-weight: 500;
 }
 
 .saveForm input {
@@ -1174,8 +1204,8 @@ button {
   padding: 0 14px;
   color: var(--ink);
   background: var(--cream);
-  border: 1px solid rgba(249, 245, 232, 0.3);
-  border-radius: 11px;
+  border: var(--press-border);
+  border-radius: var(--radius-control);
 }
 
 .secondaryButton {
@@ -1261,6 +1291,8 @@ button {
   position: fixed;
   inset: 0;
   z-index: 50;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   /* Don't chain a top-of-intro drag to the root scroller (iOS PTR). */
   overscroll-behavior-y: contain;
@@ -1283,9 +1315,55 @@ button {
   pointer-events: none;
 }
 
+/* Full-bleed ink strip across the very top — the meet's masthead. */
+.meetBanner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(35px + env(safe-area-inset-top));
+  margin: 0;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+  color: rgba(249, 245, 232, 0.85);
+  background: var(--ink);
+  border-bottom: 3px solid var(--orange);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 1.28;
+  letter-spacing: 0.26em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.meetBannerTrack {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.meetBannerTrack span {
+  flex: 0 0 auto;
+}
+
+.meetBannerTrack span + span {
+  display: none;
+}
+
+@keyframes meetBannerMarquee {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
 .introInner {
   position: relative;
   z-index: 1;
+  /* Basis auto, not 0: with a zero basis the min-height:100% floor wins and
+     tall content (an open calibrate panel) overflows into the footer. */
+  flex: 1 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
   gap: 40px;
@@ -1324,11 +1402,14 @@ button {
   .introDesc {
     animation-delay: 0.18s;
   }
-  .introSteps {
-    animation-delay: 0.22s;
+  .eventPicker {
+    animation-delay: 0.24s;
+  }
+  .eventTagline {
+    animation-delay: 0.26s;
   }
   .introStats {
-    animation-delay: 0.26s;
+    animation-delay: 0.28s;
   }
   .streakLapse {
     animation-delay: 0.3s;
@@ -1336,11 +1417,8 @@ button {
   .introCta {
     animation-delay: 0.32s;
   }
-  .calibrate {
+  .utilityRow {
     animation-delay: 0.38s;
-  }
-  .soundToggle {
-    animation-delay: 0.42s;
   }
   .printRow {
     animation-delay: 0.44s;
@@ -1360,11 +1438,6 @@ button {
     animation-delay: 0.26s;
   }
 
-  .inkStamp {
-    opacity: 0;
-    animation: inkIn 0.5s ease 0.42s forwards;
-  }
-
   .introBoard {
     opacity: 0;
     animation: rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.3s forwards;
@@ -1374,7 +1447,6 @@ button {
 /* Returning players get speed, not theater. */
 .introScreen[data-returning] .introMain > *,
 .introScreen[data-returning] .titleLine,
-.introScreen[data-returning] .inkStamp,
 .introScreen[data-returning] .introBoard {
   animation-delay: 0s !important;
 }
@@ -1399,24 +1471,15 @@ button {
 @keyframes titleStampIn {
   0% {
     opacity: 0;
-    transform: scale(1.35) rotate(calc(var(--tilt) + 2deg));
+    transform: scale(1.35);
   }
   55% {
     opacity: 1;
-    transform: scale(0.96) rotate(var(--tilt));
+    transform: scale(0.96);
   }
   100% {
     opacity: 1;
-    transform: scale(1) rotate(var(--tilt));
-  }
-}
-
-@keyframes inkIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 0.85;
+    transform: scale(1);
   }
 }
 
@@ -1461,53 +1524,17 @@ button {
   text-transform: uppercase;
 }
 
-/* A press pass that slipped: each line carries the OTHER ink as a
-   misregistered offset. */
+/* Two print passes, perfectly level: each line carries the OTHER ink as a
+   hard horizontal/vertical offset — misregistration without rotation. */
 .titleLine {
   display: block;
   color: var(--ink);
-  transform: rotate(var(--tilt));
-  text-shadow: 0.04em 0.045em 0 rgba(232, 71, 43, 0.9);
+  text-shadow: 0.045em 0.05em 0 rgba(232, 71, 43, 0.9);
 }
 
 .titleLine-accent {
-  margin-left: 0.05em;
   color: var(--orange);
-  text-shadow: 0.04em 0.045em 0 rgba(25, 35, 29, 0.92);
-}
-
-.introTitle::after {
-  position: absolute;
-  inset: -3%;
-  content: '';
-  background: var(--grain);
-  background-size: 150px;
-  mix-blend-mode: soft-light;
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-.inkStamp {
-  position: absolute;
-  top: 44%;
-  right: 0;
-  display: inline-block;
-  padding: 5px 11px;
-  border: 2.5px solid currentColor;
-  border-radius: 7px;
-  color: var(--orange-2);
-  font-family: var(--font-display);
-  font-size: 0.74rem;
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  transform: rotate(-6.5deg);
-  -webkit-mask-image: var(--grain);
-  mask-image: var(--grain);
-  -webkit-mask-size: 120px;
-  mask-size: 120px;
-  opacity: 0.85;
+  text-shadow: 0.045em 0.05em 0 rgba(25, 35, 29, 0.92);
 }
 
 .introDesc {
@@ -1518,47 +1545,15 @@ button {
   line-height: 1.5;
 }
 
-.introSteps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin: 0 0 22px;
-  padding: 0;
-  list-style: none;
-}
-
-.introSteps li {
-  padding: 7px 12px;
-  color: var(--ink-2);
-  background: rgba(255, 251, 240, 0.55);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 700;
-}
-
-.introSteps li + li {
-  position: relative;
-  margin-left: 18px;
-}
-
-.introSteps li + li::before {
-  position: absolute;
-  left: -16px;
-  content: '→';
-  color: var(--ink-soft);
-}
-
 .challengeSlip {
   width: fit-content;
   margin: 0 0 22px;
-  padding: 14px 18px;
+  padding: 14px 18px 14px 22px;
   background: var(--cream);
-  border: 2px dashed var(--orange-2);
-  border-radius: 10px;
-  transform: rotate(1.5deg);
+  border: var(--press-border);
+  border-left: 8px solid var(--orange);
+  border-radius: var(--radius-control);
+  box-shadow: var(--press-shadow);
 }
 
 .challengeSlip .eyebrow {
@@ -1575,6 +1570,93 @@ button {
   color: var(--orange-2);
 }
 
+/* The event card rack: one segmented strip, selected cell flips to orange.
+   This is the intro's visual centerpiece after the title. */
+.eventPicker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: fit-content;
+  margin: 0 0 10px;
+  background: var(--cream);
+  border: var(--press-border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--press-shadow);
+  overflow: hidden;
+}
+
+.eventOption {
+  display: grid;
+  gap: 1px;
+  justify-items: center;
+  min-width: 76px;
+  min-height: 58px;
+  padding: 9px 12px 8px;
+  background: var(--cream);
+  border: 0;
+  border-right: 1.5px solid var(--ink);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.eventOption:last-child {
+  border-right: 0;
+}
+
+.eventOption strong {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.eventOption span {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.eventOption:hover {
+  background: var(--paper-lit);
+}
+
+.eventOption.isSelected {
+  /* orange-2, not orange: the brighter hue can't carry small light text
+     at WCAG AA (4.5:1). */
+  background: var(--orange-2);
+}
+
+.eventOption.isSelected strong {
+  color: var(--cream);
+}
+
+.eventOption.isSelected span {
+  color: var(--cream);
+}
+
+.eventOption:focus-visible {
+  outline: 3px solid #2e8bd6;
+  outline-offset: -3px;
+}
+
+.eventTagline {
+  min-height: 1.5em;
+  margin: 0 0 22px;
+  color: var(--orange-2);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .introStats {
   display: flex;
   flex-wrap: wrap;
@@ -1587,9 +1669,9 @@ button {
   gap: 2px;
   min-width: 104px;
   padding: 11px 15px;
-  background: rgba(255, 251, 240, 0.66);
-  border: 1px solid var(--line);
-  border-radius: 13px;
+  background: rgba(255, 251, 240, 0.78);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius-control);
 }
 
 .introStat span {
@@ -1630,62 +1712,69 @@ button {
   padding: 0 22px;
   color: var(--cream);
   background: var(--orange);
-  box-shadow: 0 14px 28px rgba(184, 49, 26, 0.32);
 }
 
 .startBtn {
   min-height: 60px;
   min-width: 220px;
   font-size: 1.5rem;
+  box-shadow: var(--press-shadow-lg);
+}
+
+.startBtn:active {
+  transform: translate(4px, 4px);
+  box-shadow: 2px 2px 0 0 var(--ink);
 }
 
 .primaryButton:hover {
-  box-shadow: 0 18px 36px rgba(184, 49, 26, 0.42);
-  filter: brightness(1.04);
+  filter: brightness(1.05);
 }
 
-.calibrate {
+/* Calibrate + sound: one quiet utility strip under the CTA. */
+.utilityRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
   margin-top: 22px;
-  font-size: 0.92rem;
 }
 
-.calibrate summary {
+.calibrateToggle {
   display: inline-flex;
   gap: 8px;
   align-items: center;
-  width: fit-content;
+  min-height: 38px;
   padding: 7px 12px;
   color: var(--ink-soft);
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  background: none;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius-control);
   cursor: pointer;
+  font-family: inherit;
+  font-size: 0.92rem;
   font-weight: 600;
-  list-style: none;
-  user-select: none;
   transition: background 0.15s ease;
 }
 
-.calibrate summary::-webkit-details-marker {
-  display: none;
-}
-
-.calibrate summary:hover {
+.calibrateToggle:hover {
   background: rgba(255, 251, 240, 0.6);
 }
 
-.calibrate[open] summary {
-  margin-bottom: 12px;
+.calibrateToggle[aria-expanded='true'] {
   color: var(--ink);
+  background: rgba(255, 251, 240, 0.6);
 }
 
+/* Sits outside the utility row so opening it never reflows the buttons. */
 .calibrateBody {
   display: grid;
   gap: 12px;
   max-width: 420px;
+  margin-top: 10px;
   padding: 14px;
   background: rgba(255, 251, 240, 0.78);
-  border: 1px solid var(--line);
-  border-radius: 13px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius-control);
 }
 
 .scaleSample {
@@ -1742,7 +1831,7 @@ button {
   color: var(--ink);
   background: var(--cream);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   /* 16px floor: anything smaller makes iOS Safari zoom the page on focus. */
   font-size: 1rem;
   font-weight: 700;
@@ -1754,28 +1843,30 @@ button {
   color: var(--ink-2);
   background: transparent;
   border: 1px solid var(--line-strong);
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 700;
 }
 
 .soundToggle {
-  display: block;
-  min-height: 44px;
-  margin-top: 8px;
-  padding: 12px 0;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   color: var(--ink-soft);
   background: none;
-  border: 0;
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius-control);
   cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-decoration: underline;
+  transition: background 0.15s ease;
 }
 
 .soundToggle:hover {
   color: var(--ink);
+  background: rgba(255, 251, 240, 0.6);
 }
 
 /* The line people zoom into and quote-tweet. */
@@ -1789,25 +1880,218 @@ button {
   opacity: 0.65;
 }
 
+.siteFooter {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1080px, 100%);
+  margin: 0 auto;
+  padding: 18px clamp(20px, 5vw, 56px) calc(22px + env(safe-area-inset-bottom));
+  color: var(--ink-soft);
+  border-top: 1.5px dashed var(--line-strong);
+}
+
+.siteFooter p {
+  margin: 0;
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.creditLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.creditLinks a {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: var(--ink);
+  background: rgba(255, 251, 240, 0.55);
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.creditLinks a:hover {
+  color: var(--cream);
+  background: var(--ink);
+  transform: translateY(-1px);
+}
+
+.creditLinks a:focus-visible {
+  outline: 3px solid #2e8bd6;
+  outline-offset: 2px;
+}
+
 /* --------------------------------------------------------- LEADERBOARD --- */
 
 .introBoard {
   align-self: center;
   width: 100%;
-  padding: 22px;
-  background: var(--panel-dark);
-  border: 1px solid rgba(249, 245, 232, 0.12);
-  border-radius: 20px;
-  box-shadow: 0 24px 50px rgba(43, 32, 17, 0.22);
+  position: relative;
+  isolation: isolate;
+  padding: 24px 20px 20px;
+  color: var(--cream);
+  background:
+    linear-gradient(rgba(249, 245, 232, 0.04) 1px, transparent 1px) 0 0 / 100%
+      12px,
+    linear-gradient(135deg, rgba(243, 195, 59, 0.14), transparent 38%),
+    var(--panel-dark);
+  border: var(--press-border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.introBoard::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: -1;
+  height: 8px;
+  content: '';
+  background: repeating-linear-gradient(
+    90deg,
+    var(--orange) 0 28px,
+    var(--amber) 28px 36px,
+    var(--orange) 36px 64px
+  );
+  border-bottom: 2px solid var(--ink);
+}
+
+.boardHead {
+  display: flex;
+  /* Wraps below ~380px so the tabs never overflow the dark panel. */
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+/* World / This-device toggle: a recessed pill switch in the dark panel. */
+.boardTabs {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid rgba(249, 245, 232, 0.14);
+  border-radius: 999px;
+}
+
+.boardTab {
+  min-height: 30px;
+  padding: 0 13px;
+  color: rgba(249, 245, 232, 0.62);
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.boardTab:hover {
+  color: rgba(249, 245, 232, 0.9);
+}
+
+.boardTab.isActive {
+  color: var(--ink);
+  background: var(--cream);
+  font-weight: 700;
+}
+
+.boardTab:focus-visible {
+  outline: 3px solid #2e8bd6;
+  outline-offset: -3px;
+}
+
+.boardSub {
+  margin: 0 0 10px;
+  padding-bottom: 10px;
+  color: rgba(249, 245, 232, 0.52);
+  border-bottom: 1px solid rgba(249, 245, 232, 0.12);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+}
+
+.boardNote {
+  margin: 0 0 12px;
+  padding: 9px 10px;
+  color: rgba(249, 245, 232, 0.74);
+  background: rgba(232, 71, 43, 0.12);
+  border: 1px solid rgba(232, 71, 43, 0.32);
+  border-radius: var(--radius-control);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.boardTotal {
+  margin: 12px 0 0;
+  padding-top: 11px;
+  color: rgba(249, 245, 232, 0.55);
+  border-top: 1px solid rgba(249, 245, 232, 0.12);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.leaderboardMeta {
+  display: block;
+  max-width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+  /* 0.58 clears WCAG AA at this size against the dark panel. */
+  color: rgba(249, 245, 232, 0.58);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.leaderboardMeta:empty {
+  display: none;
 }
 
 .introBoard h2 {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--cream);
   font-family: var(--font-display);
-  font-size: 1.35rem;
+  font-size: 1.55rem;
   font-weight: 800;
   letter-spacing: 0.02em;
+  line-height: 1;
 }
 
 .introBoard h2 svg {
@@ -1815,51 +2099,55 @@ button {
 }
 
 .emptyBoardTitle {
-  margin: 0 0 12px;
-  color: rgba(249, 245, 232, 0.75);
-  font-weight: 600;
-  text-align: center;
+  margin: 0 0 6px;
+  padding: 2px 0 6px;
+  color: rgba(249, 245, 232, 0.82);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
 }
 
+/* A continuous ledger, not a stack of cards: hairline separators carry the
+   structure and the medal color lives in the rank numeral alone. */
 .leaderboardList {
   display: grid;
-  gap: 8px;
   padding: 0;
   margin: 0;
   list-style: none;
 }
 
 .leaderboardList li {
+  position: relative;
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 40px;
-  padding: 7px 10px;
+  min-height: 47px;
+  padding: 8px 6px;
   color: var(--cream);
-  background: rgba(249, 245, 232, 0.06);
-  border: 1px solid rgba(249, 245, 232, 0.08);
-  border-radius: 11px;
+  border-bottom: 1px solid rgba(249, 245, 232, 0.1);
+  border-radius: 6px;
 }
 
-.leaderboardList li[data-medal] {
-  background: rgba(243, 195, 59, 0.08);
-  border-color: rgba(243, 195, 59, 0.24);
+.leaderboardList li:last-child {
+  border-bottom: 0;
 }
 
 /* Previews winning instead of showing a void. */
 .leaderboardList li.ghostRow {
   color: rgba(249, 245, 232, 0.52);
-  background: transparent;
-  border: 1px dashed rgba(249, 245, 232, 0.22);
+  border-bottom-style: dashed;
+  border-bottom-color: rgba(249, 245, 232, 0.16);
 }
 
-.ghostRow .leaderboardRank {
-  color: rgba(249, 245, 232, 0.52);
-  background: transparent;
-  border: 1px dashed rgba(249, 245, 232, 0.3);
+.leaderboardList li.ghostRow:last-child {
+  border-bottom: 0;
 }
 
+.ghostRow .leaderboardRank,
 .ghostRow .leaderboardTime {
   color: rgba(249, 245, 232, 0.52);
 }
@@ -1879,42 +2167,55 @@ button {
 .leaderboardRank {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  color: var(--cream);
-  background: var(--ink-2);
-  border-radius: 999px;
-  font-family: var(--font-display);
-  font-size: 0.82rem;
+  width: 30px;
+  color: rgba(249, 245, 232, 0.45);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboardList li[data-medal] .leaderboardRank {
+  font-size: 0.95rem;
   font-weight: 800;
 }
 
 .leaderboardList li[data-medal='1'] .leaderboardRank {
-  color: var(--ink);
-  background: var(--amber);
+  color: var(--amber);
 }
 
 .leaderboardList li[data-medal='2'] .leaderboardRank {
-  color: var(--ink);
-  background: #d8d2c4;
+  color: rgba(249, 245, 232, 0.88);
 }
 
 .leaderboardList li[data-medal='3'] .leaderboardRank {
-  color: var(--cream);
-  background: #c07b46;
+  color: var(--orange);
 }
 
 .leaderboardName {
+  min-width: 0;
   overflow: hidden;
+  color: rgba(249, 245, 232, 0.92);
   font-weight: 700;
+  line-height: 1.12;
+}
+
+.leaderboardPlayer {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .leaderboardTime {
+  min-width: 62px;
   color: var(--amber);
   font-family: var(--font-mono);
+  font-size: 0.95rem;
   font-weight: 700;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1960,8 +2261,8 @@ button {
   border: 4px solid var(--orange);
   border-radius: 50%;
   box-shadow:
-    0 0 0 10px rgba(232, 71, 43, 0.12),
-    0 24px 60px rgba(0, 0, 0, 0.5);
+    0 0 0 8px var(--panel-dark),
+    0 0 0 11px rgba(232, 71, 43, 0.55);
   animation: countPop 0.75s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -2049,6 +2350,8 @@ button {
     grid-template-columns: 1fr;
     gap: 26px;
     align-items: start;
+    flex: 0 0 auto;
+    min-height: auto;
     padding-top: clamp(36px, 9vw, 72px);
   }
 
@@ -2058,6 +2361,27 @@ button {
 }
 
 @media (max-width: 760px) {
+  .meetBanner {
+    justify-content: flex-start;
+    padding-right: 0;
+    padding-left: 0;
+    text-align: left;
+  }
+
+  .meetBannerTrack {
+    max-width: none;
+    animation: meetBannerMarquee 14s linear infinite;
+    will-change: transform;
+  }
+
+  .meetBannerTrack span {
+    padding: 0 16px;
+  }
+
+  .meetBannerTrack span + span {
+    display: block;
+  }
+
   .scrollRace {
     --rail-width: 64px;
   }
@@ -2107,13 +2431,28 @@ button {
     width: 24px;
   }
 
-  /* Start stays under the thumb even when the leaderboard pushes content. */
-  .introCta {
-    position: sticky;
-    bottom: 0;
-    z-index: 2;
-    padding: 12px 0 calc(10px + env(safe-area-inset-bottom));
-    background: linear-gradient(to bottom, transparent, var(--paper) 38%);
+  /* One line, full bleed: the condensed face lets the whole wordmark sit
+     across the phone instead of stacking. */
+  .introTitle {
+    font-size: clamp(2.6rem, 15.5vw, 5rem);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .titleLine {
+    display: inline-block;
+  }
+
+  .titleLine-accent {
+    margin-left: 0.14em;
+  }
+
+  .siteFooter {
+    align-items: stretch;
+  }
+
+  .siteFooter p {
+    width: 100%;
   }
 }
 
@@ -2134,6 +2473,53 @@ button {
   .introStat {
     flex: 1 1 88px;
     min-width: 0;
+  }
+
+  .introBoard {
+    padding: 22px 14px 16px;
+  }
+
+  .boardHead {
+    align-items: stretch;
+  }
+
+  .boardTabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .boardTab {
+    padding: 0 8px;
+  }
+
+  .leaderboardList li {
+    grid-template-columns: 24px minmax(0, 1fr) minmax(56px, auto);
+    gap: 8px;
+    padding: 8px 4px;
+  }
+
+  .leaderboardRank {
+    width: 24px;
+  }
+
+  .leaderboardTime {
+    min-width: 56px;
+    font-size: 0.88rem;
+  }
+
+  /* 2x2 event rack on narrow phones. */
+  .eventPicker {
+    grid-template-columns: repeat(2, 1fr);
+    width: 100%;
+  }
+
+  .eventOption:nth-child(2) {
+    border-right: 0;
+  }
+
+  .eventOption:nth-child(-n + 2) {
+    border-bottom: 1.5px solid var(--ink);
   }
 
   .startBtn {
@@ -2186,13 +2572,27 @@ button {
   .introMain > *,
   .introBoard,
   .titleLine,
-  .inkStamp,
   .funFacts li {
     opacity: 1;
   }
 
-  .inkStamp {
-    opacity: 0.85;
+  .meetBanner {
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .meetBanner::-webkit-scrollbar {
+    display: none;
+  }
+
+  .meetBannerTrack {
+    animation: none;
+    transform: none;
+  }
+
+  .meetBannerTrack span + span {
+    display: none;
   }
 
   /* goPop ends at opacity 0; show a brief static GO! card instead — the JS
