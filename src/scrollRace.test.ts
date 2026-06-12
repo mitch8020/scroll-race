@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  EVENTS,
   buildShareText,
   clipName,
   decileGrid,
+  eventForFeet,
   fasterThanPercent,
-  feetAtTime,
   formatTime,
   parseChallengeMs,
+  parseEventFeet,
+  percentAtTime,
+  randomRacerName,
   rankTitle,
   sanitizeName,
   speedTicketLine,
-  timeAtFeet,
+  timeAtPercent,
   unitLine,
 } from './lib/race'
 import { createRulerTicks, normalizePixelsPerInch } from './routes'
@@ -37,6 +41,25 @@ describe('scroll race helpers', () => {
       label: '100 ft',
       top: 115_200,
     })
+  })
+
+  it('caps tick counts for long events with coarser spacing', () => {
+    const marathonTicks = createRulerTicks(96, eventForFeet(1000))
+
+    expect(marathonTicks).toHaveLength(1_001)
+    expect(marathonTicks[0]).toMatchObject({ kind: 'foot', label: '0 ft' })
+    expect(marathonTicks.at(-1)).toMatchObject({
+      kind: 'foot',
+      label: '1000 ft',
+    })
+    // Labels only every 50 ft on the marathon.
+    expect(
+      marathonTicks.filter((tick) => tick.label !== undefined),
+    ).toHaveLength(21)
+
+    const dashTicks = createRulerTicks(96, eventForFeet(250))
+
+    expect(dashTicks).toHaveLength(1_001)
   })
 
   it('keeps manual scale calibration in the supported mobile range', () => {
@@ -133,6 +156,21 @@ describe('challenge URL hygiene', () => {
     expect(parseChallengeMs(undefined)).toBeUndefined()
     expect(parseChallengeMs(Infinity)).toBeUndefined()
   })
+
+  it('scales the challenge floor with the event so links cannot grief', () => {
+    // The floor equals the wind-assist minimum (10ms/ft): any accepted
+    // challenge is beatable without the winner being auto-flagged.
+    for (const event of EVENTS) {
+      const floor = event.feet * 10
+
+      expect(parseChallengeMs(String(floor - 1), event.feet)).toBeUndefined()
+      expect(parseChallengeMs(String(floor), event.feet)).toBe(floor)
+    }
+
+    expect(parseChallengeMs('5000', 1000)).toBeUndefined()
+    expect(parseChallengeMs('15000', 1000)).toBe(15_000)
+    expect(parseChallengeMs('2499', 250)).toBeUndefined()
+  })
 })
 
 describe('share text', () => {
@@ -148,12 +186,26 @@ describe('share text', () => {
     const lines = text.split('\n')
 
     expect(lines).toHaveLength(4)
-    expect(lines[0]).toBe('SCROLL RACE 🏁 4.20s')
+    expect(lines[0]).toBe('SCROLL RACE 🏁 100 FT · 4.20s')
     expect(lines[1]).toBe('🟨🟨🟨🟨🟨🟨🟨🟨🟨🟨')
     expect(lines[2]).toBe('Greased Lightning · faster than 92% of thumbs')
     expect(lines[3]).toBe(
-      'Beat me: https://scroll-race.netlify.app/?beat=4200&by=JP',
+      'Beat me: https://scroll-race.netlify.app/?beat=4200&event=100&by=JP',
     )
+  })
+
+  it('carries the event distance through the card', () => {
+    const text = buildShareText({
+      timeMs: 42_000,
+      splitsMs: linearSplits,
+      origin: 'https://x.test',
+      eventFeet: 1000,
+    })
+
+    expect(text).toContain('SCROLL RACE 🏁 1000 FT · 42.00s')
+    expect(text).toContain('?beat=42000&event=1000')
+    // A 42s thousand-footer is a 4.2s/100ft pace — same title as the sprint.
+    expect(text).toContain('Greased Lightning')
   })
 
   it('omits the by param without a saved name', () => {
@@ -190,7 +242,9 @@ describe('share text', () => {
     })
 
     expect(text).toContain('I just took down Sam’s 100 ft record 🏁 4.00s')
-    expect(text).toContain('Your move: https://x.test/?beat=4000&by=JP')
+    expect(text).toContain(
+      'Your move: https://x.test/?beat=4000&event=100&by=JP',
+    )
   })
 
   it('self-reports wind-assisted runs', () => {
@@ -225,42 +279,89 @@ describe('speed conversions', () => {
   })
 
   it('rotates the unit conversion line by run count', () => {
-    expect(unitLine(0)).toContain('blue whale')
-    expect(unitLine(1)).toContain('giraffes')
-    expect(unitLine(2)).toContain('school buses')
-    expect(unitLine(3)).toContain('Statues of Liberty')
+    expect(unitLine(0)).toBe('You scrolled an entire blue whale, nose to tail.')
+    expect(unitLine(1)).toBe('That’s 5.6 giraffes, stacked.')
+    expect(unitLine(2)).toBe('That’s 2.9 school buses.')
+    expect(unitLine(3)).toBe('That’s 0.66 Statues of Liberty (no pedestal).')
     expect(unitLine(4)).toContain('blue whale')
+  })
+
+  it('scales the unit conversions to the event distance', () => {
+    expect(unitLine(0, 1000)).toBe(
+      'You scrolled 10.2 blue whales, nose to tail.',
+    )
+    expect(unitLine(2, 1000)).toBe('That’s 29 school buses.')
+    expect(unitLine(3, 250)).toBe(
+      'That’s 1.7 Statues of Liberty (no pedestal).',
+    )
+  })
+})
+
+describe('events', () => {
+  it('defines the four sanctioned distances', () => {
+    expect(EVENTS.map((event) => event.feet)).toEqual([100, 250, 500, 1000])
+  })
+
+  it('parses only sanctioned event distances from the URL', () => {
+    expect(parseEventFeet('250')).toBe(250)
+    expect(parseEventFeet(1000)).toBe(1000)
+    expect(parseEventFeet('150')).toBeUndefined()
+    expect(parseEventFeet('')).toBeUndefined()
+    expect(parseEventFeet(undefined)).toBeUndefined()
+  })
+
+  it('judges titles and percentiles on pace, not raw time', () => {
+    expect(rankTitle(42_000, 1000)).toBe(rankTitle(4_200, 100))
+    expect(fasterThanPercent(115_000, 1000)).toBe(
+      fasterThanPercent(11_500, 100),
+    )
+  })
+})
+
+describe('random racer names', () => {
+  it('always fits the 18-character name budget', () => {
+    for (let index = 0; index < 200; index += 1) {
+      const name = randomRacerName()
+
+      expect(name.length).toBeLessThanOrEqual(18)
+      expect(name).toMatch(/^\S+ \S+$/)
+    }
+  })
+
+  it('is deterministic for a fixed rng', () => {
+    expect(randomRacerName(() => 0)).toBe('Turbo Thumb')
+    expect(randomRacerName(() => 0.999)).toBe('Rogue Swift')
   })
 })
 
 describe('ghost interpolation', () => {
-  const splits = Array.from({ length: 101 }, (_, foot) => foot * 100)
+  const splits = Array.from({ length: 101 }, (_, mark) => mark * 100)
 
-  it('round-trips between feet and time on even splits', () => {
-    expect(feetAtTime(splits, 10_000, 5_000)).toBeCloseTo(50)
-    expect(feetAtTime(splits, 10_000, 5_050)).toBeCloseTo(50.5)
-    expect(timeAtFeet(splits, 10_000, 50)).toBeCloseTo(5_000)
-    expect(timeAtFeet(splits, 10_000, 50.5)).toBeCloseTo(5_050)
+  it('round-trips between course percent and time on even splits', () => {
+    expect(percentAtTime(splits, 10_000, 5_000)).toBeCloseTo(50)
+    expect(percentAtTime(splits, 10_000, 5_050)).toBeCloseTo(50.5)
+    expect(timeAtPercent(splits, 10_000, 50)).toBeCloseTo(5_000)
+    expect(timeAtPercent(splits, 10_000, 50.5)).toBeCloseTo(5_050)
   })
 
   it('clamps to the course bounds', () => {
-    expect(feetAtTime(splits, 10_000, -5)).toBe(0)
-    expect(feetAtTime(splits, 10_000, 20_000)).toBe(100)
-    expect(timeAtFeet(splits, 10_000, 200)).toBe(10_000)
+    expect(percentAtTime(splits, 10_000, -5)).toBe(0)
+    expect(percentAtTime(splits, 10_000, 20_000)).toBe(100)
+    expect(timeAtPercent(splits, 10_000, 200)).toBe(10_000)
   })
 
   it('falls back to linear pace for legacy entries without splits', () => {
-    expect(feetAtTime(null, 10_000, 2_500)).toBeCloseTo(25)
-    expect(timeAtFeet(null, 10_000, 25)).toBeCloseTo(2_500)
+    expect(percentAtTime(null, 10_000, 2_500)).toBeCloseTo(25)
+    expect(timeAtPercent(null, 10_000, 25)).toBeCloseTo(2_500)
   })
 
   it('steps through teleport plateaus without dividing by zero', () => {
-    // A fling: feet 20–80 all crossed at the same instant.
-    const fling = Array.from({ length: 101 }, (_, foot) =>
-      foot < 20 ? foot * 100 : foot <= 80 ? 2_000 : 2_000 + (foot - 80) * 100,
+    // A fling: marks 20–80 all crossed at the same instant.
+    const fling = Array.from({ length: 101 }, (_, mark) =>
+      mark < 20 ? mark * 100 : mark <= 80 ? 2_000 : 2_000 + (mark - 80) * 100,
     )
 
-    expect(feetAtTime(fling, 4_000, 2_000)).toBeGreaterThanOrEqual(20)
-    expect(Number.isFinite(feetAtTime(fling, 4_000, 2_000))).toBe(true)
+    expect(percentAtTime(fling, 4_000, 2_000)).toBeGreaterThanOrEqual(20)
+    expect(Number.isFinite(percentAtTime(fling, 4_000, 2_000))).toBe(true)
   })
 })
