@@ -1801,7 +1801,30 @@ function Home() {
                 </div>
               </div>
               <p className="boardSub">
-                {activeEventFeet} FT · {activeEvent.name.toUpperCase()}
+                <span>
+                  {activeEventFeet} FT · {activeEvent.name.toUpperCase()}
+                </span>
+                <span
+                  className="boardStatus"
+                  data-state={
+                    boardTab === 'device'
+                      ? 'local'
+                      : globalBoard.status === 'ready'
+                        ? 'live'
+                        : globalBoard.status === 'loading'
+                          ? 'sync'
+                          : 'offline'
+                  }
+                >
+                  <i className="boardStatusDot" aria-hidden="true" />
+                  {boardTab === 'device'
+                    ? 'Local'
+                    : globalBoard.status === 'ready'
+                      ? 'Live'
+                      : globalBoard.status === 'loading'
+                        ? 'Syncing'
+                        : 'Offline'}
+                </span>
               </p>
               {boardTab === 'world' ? (
                 <WorldBoard state={globalBoard} fallbackEntries={leaderboard} />
@@ -1992,6 +2015,44 @@ function verdictLine(result: RaceResult, challenge: Challenge) {
   return `${challenge.name} survives — you were ${(Math.abs(diff) / 1000).toFixed(2)}s short.`
 }
 
+// Timing-tower convention: the leader posts the time, the field posts the
+// gap to it.
+function GapToLeader({
+  timeMs,
+  leaderMs,
+}: {
+  timeMs: number
+  leaderMs: number | undefined
+}) {
+  if (leaderMs === undefined) {
+    return null
+  }
+
+  return (
+    <span className="leaderboardGap">
+      +{(Math.max(0, timeMs - leaderMs) / 1000).toFixed(2)}s
+    </span>
+  )
+}
+
+function GhostRows({ names }: { names: Array<string> }) {
+  return (
+    <ol className="leaderboardList">
+      {names.map((name, index) => (
+        <li
+          className="ghostRow"
+          key={index}
+          style={{ '--i': index } as CSSProperties}
+        >
+          <span className="leaderboardRank">{index + 1}</span>
+          <span className="leaderboardName">{name}</span>
+          <span className="leaderboardTime">--.--s</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 // The world tab: live top-10 from the leaderboard function, with this
 // device's board as the graceful fallback when the network isn't there.
 function WorldBoard({
@@ -2005,7 +2066,11 @@ function WorldBoard({
     return (
       <ol className="leaderboardList" aria-label="World leaderboard loading">
         {[1, 2, 3].map((rank) => (
-          <li className="ghostRow" key={rank}>
+          <li
+            className="ghostRow isLoading"
+            key={rank}
+            style={{ '--i': rank - 1 } as CSSProperties}
+          >
             <span className="leaderboardRank">{rank}</span>
             <span className="leaderboardName">…</span>
             <span className="leaderboardTime">--.--s</span>
@@ -2030,24 +2095,23 @@ function WorldBoard({
     return (
       <>
         <p className="emptyBoardTitle">The world record is wide open.</p>
-        <ol className="leaderboardList">
-          {['Your name here', '—', '—'].map((name, index) => (
-            <li className="ghostRow" key={index}>
-              <span className="leaderboardRank">{index + 1}</span>
-              <span className="leaderboardName">{name}</span>
-              <span className="leaderboardTime">--.--s</span>
-            </li>
-          ))}
-        </ol>
+        <GhostRows names={['Your name here', '—', '—']} />
       </>
     )
   }
 
+  const top = state.entries.slice(0, 10)
+  const leaderMs = top.at(0)?.timeMs
+
   return (
     <>
       <ol className="leaderboardList">
-        {state.entries.slice(0, 10).map((entry, index) => (
-          <li key={entry.id} data-medal={index < 3 ? index + 1 : undefined}>
+        {top.map((entry, index) => (
+          <li
+            key={entry.id}
+            data-medal={index < 3 ? index + 1 : undefined}
+            style={{ '--i': index } as CSSProperties}
+          >
             <span className="leaderboardRank">{index + 1}</span>
             <span className="leaderboardName">
               <span className="leaderboardPlayer">{entry.name}</span>
@@ -2057,7 +2121,12 @@ function WorldBoard({
                   .join(' · ')}
               </span>
             </span>
-            <span className="leaderboardTime">{formatTime(entry.timeMs)}</span>
+            <span className="leaderboardTime">
+              {formatTime(entry.timeMs)}
+              {index > 0 ? (
+                <GapToLeader timeMs={entry.timeMs} leaderMs={leaderMs} />
+              ) : null}
+            </span>
           </li>
         ))}
       </ol>
@@ -2084,18 +2153,12 @@ function Leaderboard({
     return (
       <>
         <p className="emptyBoardTitle">The record is wide open.</p>
-        <ol className="leaderboardList">
-          {['Your name here', '—', '—'].map((name, index) => (
-            <li className="ghostRow" key={index}>
-              <span className="leaderboardRank">{index + 1}</span>
-              <span className="leaderboardName">{name}</span>
-              <span className="leaderboardTime">--.--s</span>
-            </li>
-          ))}
-        </ol>
+        <GhostRows names={['Your name here', '—', '—']} />
       </>
     )
   }
+
+  const leaderMs = entries.at(0)?.timeMs
 
   return (
     <ol className="leaderboardList">
@@ -2105,12 +2168,18 @@ function Leaderboard({
           data-medal={index < 3 ? index + 1 : undefined}
           className={entry.id === justSavedId ? 'justSaved' : undefined}
           onAnimationEnd={entry.id === justSavedId ? onGlowEnd : undefined}
+          style={{ '--i': index } as CSSProperties}
         >
           <span className="leaderboardRank">{index + 1}</span>
           <span className="leaderboardName">
             <span className="leaderboardPlayer">{entry.name}</span>
           </span>
-          <span className="leaderboardTime">{formatTime(entry.timeMs)}</span>
+          <span className="leaderboardTime">
+            {formatTime(entry.timeMs)}
+            {index > 0 ? (
+              <GapToLeader timeMs={entry.timeMs} leaderMs={leaderMs} />
+            ) : null}
+          </span>
         </li>
       ))}
     </ol>
