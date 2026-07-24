@@ -1,5 +1,11 @@
 export type RaceStatus = 'intro' | 'countdown' | 'racing' | 'finished'
 
+export type RaceSearch = {
+  beat?: number
+  by?: string
+  event?: number
+}
+
 export type Challenge = {
   name: string
   timeMs: number
