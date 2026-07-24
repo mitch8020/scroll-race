@@ -13,7 +13,7 @@ import {
   VolumeX,
 } from 'lucide-react'
 import type { CSSProperties, FormEvent } from 'react'
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   clamp,
@@ -24,7 +24,6 @@ import {
   MIN_PIXELS_PER_INCH,
   normalizePixelsPerInch,
 } from '../lib/course'
-import type { RulerTick } from '../lib/course'
 import {
   DEFAULT_EVENT_FEET,
   EVENTS,
@@ -47,7 +46,6 @@ import {
   timeAtPercent,
   unitLine,
 } from '../lib/race'
-import type { GlobalEntry } from '../lib/board'
 import { SUBMIT_COOLDOWN_MS } from '../lib/board'
 import { fetchGlobalBoard, submitToGlobalBoard } from '../lib/globalBoard'
 import type { LeaderboardEntry } from '../lib/localRaceStore'
@@ -75,6 +73,25 @@ import {
   writeStreak,
 } from '../lib/localRaceStore'
 import * as sfx from '../lib/sfx'
+import {
+  DecadeMarks,
+  MILESTONE_PERCENTS,
+  MilestoneGates,
+  RulerRail,
+} from '../features/race/courseView'
+import type { GlobalBoardState } from '../features/race/leaderboardView'
+import { Leaderboard, WorldBoard } from '../features/race/leaderboardView'
+import {
+  ConfettiBurst,
+  PbDeltaLine,
+  verdictLine,
+} from '../features/race/resultView'
+import type {
+  Challenge,
+  GhostPlan,
+  RaceResult,
+  RaceStatus,
+} from '../features/race/types'
 
 export { formatTime }
 export { createRulerTicks, normalizePixelsPerInch } from '../lib/course'
@@ -138,8 +155,6 @@ const CREDIT_LINKS: Array<{
     brand: 'discord',
   },
 ]
-// Milestone gates sit at quarters of the course, whatever its length.
-const MILESTONE_PERCENTS = [25, 50, 75]
 const COUNTDOWN_FROM = 3
 const COUNTDOWN_BEAT_MS = 750
 // A single-frame jump bigger than this is a teleport, not a scroll.
@@ -156,58 +171,6 @@ const DELTA_SIGN_HYSTERESIS_MS = 60
 // the pattern tiles seamlessly. Must match the gradients in styles.css.
 const SPEED_LAYER_WRAP_A = 220
 const SPEED_LAYER_WRAP_B = 110
-
-// Course-side copy positioned by percent so every event distance reads the
-// same arc. The labels show real feet for the active event.
-const DECADE_MARKS = [
-  { percent: 10, copy: 'WARMING UP' },
-  { percent: 20, copy: 'FIND YOUR STRIDE' },
-  { percent: 30, copy: 'TOP GEAR' },
-  { percent: 40, copy: "DON'T BLINK" },
-  { percent: 50, copy: 'HALFWAY · NO BRAKES' },
-  { percent: 60, copy: 'LUNGS ON FIRE' },
-  { percent: 70, copy: "THE WALL ISN'T REAL" },
-  { percent: 80, copy: 'EYES ON THE TAPE' },
-  { percent: 90, copy: 'SEND IT' },
-]
-
-type RaceStatus = 'intro' | 'countdown' | 'racing' | 'finished'
-
-type Challenge = {
-  name: string
-  timeMs: number
-  eventFeet: number
-}
-
-type RaceResult = {
-  timeMs: number
-  eventFeet: number
-  splitsMs: Array<number>
-  topFtps: number
-  windAssisted: boolean
-  prevPbMs: number | null
-  isPb: boolean
-  isRecord: boolean
-  streakDays: number
-  firstOfDay: boolean
-  newDailyBest: boolean
-  runNumber: number
-  challenge: Challenge | null
-}
-
-type GhostPlan =
-  | { kind: 'challenge'; name: string; totalMs: number; splitsMs: null }
-  | {
-      kind: 'pb'
-      name: string
-      totalMs: number
-      splitsMs: Array<number> | null
-    }
-
-type GlobalBoardState =
-  | { status: 'loading' }
-  | { status: 'error' }
-  | { status: 'ready'; entries: Array<GlobalEntry>; total: number }
 
 type CourseStyle = CSSProperties & {
   '--course-height': string
@@ -1866,423 +1829,6 @@ function Home() {
         </div>
       ) : null}
     </main>
-  )
-}
-
-// The course furniture is memoized at module scope: setElapsedMs commits once
-// per rAF frame, and without the bailout every commit would re-reconcile the
-// 1,201 ruler ticks plus all course marks — pure waste in the hottest path.
-const RulerRail = memo(function RulerRail({
-  ticks,
-}: {
-  ticks: Array<RulerTick>
-}) {
-  return (
-    <div className="rulerRail" aria-hidden="true">
-      {ticks.map((tick) => (
-        <div
-          className={`rulerTick rulerTick-${tick.kind}`}
-          key={tick.inch}
-          style={{ top: `${tick.top}px` }}
-        >
-          {tick.label ? <span>{tick.label}</span> : null}
-        </div>
-      ))}
-    </div>
-  )
-})
-
-const DecadeMarks = memo(function DecadeMarks({
-  eventFeet,
-  courseHeight,
-}: {
-  eventFeet: number
-  courseHeight: number
-}) {
-  return (
-    <>
-      {DECADE_MARKS.map((mark) => (
-        <div
-          className={`decadeMark${mark.percent >= 80 ? ' decadeMark-dark' : ''}${mark.percent === 90 ? ' decadeMark-send' : ''}`}
-          key={mark.percent}
-          style={{ top: `${(mark.percent / PERCENT_STEPS) * courseHeight}px` }}
-          aria-hidden="true"
-        >
-          <span>
-            {Math.round((mark.percent / PERCENT_STEPS) * eventFeet)} FT
-          </span>
-          <strong>{mark.copy}</strong>
-        </div>
-      ))}
-    </>
-  )
-})
-
-const MilestoneGates = memo(function MilestoneGates({
-  passed,
-  eventFeet,
-  courseHeight,
-}: {
-  passed: Array<number>
-  eventFeet: number
-  courseHeight: number
-}) {
-  return (
-    <>
-      {MILESTONE_PERCENTS.map((percent) => (
-        <div
-          className="milestone"
-          key={percent}
-          data-passed={passed.includes(percent) ? '' : undefined}
-          style={{ top: `${(percent / PERCENT_STEPS) * courseHeight}px` }}
-        >
-          <span>{Math.round((percent / PERCENT_STEPS) * eventFeet)} ft</span>
-        </div>
-      ))}
-    </>
-  )
-})
-
-function PbDeltaLine({ result }: { result: RaceResult }) {
-  if (result.prevPbMs === null) {
-    return (
-      <p className="pbDelta pbDelta-first">Your first time on the books.</p>
-    )
-  }
-
-  const diff = result.timeMs - result.prevPbMs
-
-  if (diff < 0) {
-    return (
-      <p className="pbDelta pbDelta-pb">
-        ▼ {(Math.abs(diff) / 1000).toFixed(2)}s — new personal best
-      </p>
-    )
-  }
-
-  // Only needle the player when they were close — shown on every loss it
-  // gets old.
-  if (result.timeMs <= result.prevPbMs * 1.05) {
-    return (
-      <p className="pbDelta pbDelta-close">
-        +{(diff / 1000).toFixed(2)}s off your best. You’re not leaving it like
-        that, are you?
-      </p>
-    )
-  }
-
-  return (
-    <p className="pbDelta pbDelta-off">
-      +{(diff / 1000).toFixed(2)}s off your best ({formatTime(result.prevPbMs)})
-    </p>
-  )
-}
-
-function verdictLine(result: RaceResult, challenge: Challenge) {
-  const diff = challenge.timeMs - result.timeMs
-
-  if (Math.abs(diff) < 10) {
-    return `Dead heat with ${challenge.name}. Run it again.`
-  }
-
-  if (diff > 0) {
-    return `You beat ${challenge.name} by ${(diff / 1000).toFixed(2)}s. Send it back.`
-  }
-
-  return `${challenge.name} survives — you were ${(Math.abs(diff) / 1000).toFixed(2)}s short.`
-}
-
-// Timing-tower convention: the leader posts the time, the field posts the
-// gap to it.
-function GapToLeader({
-  timeMs,
-  leaderMs,
-}: {
-  timeMs: number
-  leaderMs: number | undefined
-}) {
-  if (leaderMs === undefined) {
-    return null
-  }
-
-  return (
-    <span className="leaderboardGap">
-      +{(Math.max(0, timeMs - leaderMs) / 1000).toFixed(2)}s
-    </span>
-  )
-}
-
-function GhostRows({ names }: { names: Array<string> }) {
-  return (
-    <ol className="leaderboardList">
-      {names.map((name, index) => (
-        <li
-          className="ghostRow"
-          key={index}
-          style={{ '--i': index } as CSSProperties}
-        >
-          <span className="leaderboardRank">{index + 1}</span>
-          <span className="leaderboardName">{name}</span>
-          <span className="leaderboardTime">--.--s</span>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-// The world tab: live top-10 from the leaderboard function, with this
-// device's board as the graceful fallback when the network isn't there.
-function WorldBoard({
-  state,
-  fallbackEntries,
-}: {
-  state: GlobalBoardState
-  fallbackEntries: Array<LeaderboardEntry>
-}) {
-  if (state.status === 'loading') {
-    return (
-      <ol className="leaderboardList" aria-label="World leaderboard loading">
-        {[1, 2, 3].map((rank) => (
-          <li
-            className="ghostRow isLoading"
-            key={rank}
-            style={{ '--i': rank - 1 } as CSSProperties}
-          >
-            <span className="leaderboardRank">{rank}</span>
-            <span className="leaderboardName">…</span>
-            <span className="leaderboardTime">--.--s</span>
-          </li>
-        ))}
-      </ol>
-    )
-  }
-
-  if (state.status === 'error') {
-    return (
-      <>
-        <p className="boardNote">
-          World board unreachable — showing this device.
-        </p>
-        <Leaderboard entries={fallbackEntries} />
-      </>
-    )
-  }
-
-  if (state.entries.length === 0) {
-    return (
-      <>
-        <p className="emptyBoardTitle">The world record is wide open.</p>
-        <GhostRows names={['Your name here', '—', '—']} />
-      </>
-    )
-  }
-
-  const top = state.entries.slice(0, 10)
-  const leaderMs = top.at(0)?.timeMs
-
-  return (
-    <>
-      <ol className="leaderboardList">
-        {top.map((entry, index) => (
-          <li
-            key={entry.id}
-            data-medal={index < 3 ? index + 1 : undefined}
-            style={{ '--i': index } as CSSProperties}
-          >
-            <span className="leaderboardRank">{index + 1}</span>
-            <span className="leaderboardName">
-              <span className="leaderboardPlayer">{entry.name}</span>
-              <span className="leaderboardMeta">
-                {[entry.device, entry.country]
-                  .filter((part) => part && part !== 'Unknown')
-                  .join(' · ')}
-              </span>
-            </span>
-            <span className="leaderboardTime">
-              {formatTime(entry.timeMs)}
-              {index > 0 ? (
-                <GapToLeader timeMs={entry.timeMs} leaderMs={leaderMs} />
-              ) : null}
-            </span>
-          </li>
-        ))}
-      </ol>
-      {state.total > 0 ? (
-        <p className="boardTotal">
-          {state.total.toLocaleString()} run{state.total === 1 ? '' : 's'}{' '}
-          worldwide
-        </p>
-      ) : null}
-    </>
-  )
-}
-
-function Leaderboard({
-  entries,
-  justSavedId,
-  onGlowEnd,
-}: {
-  entries: Array<LeaderboardEntry>
-  justSavedId?: string | null
-  onGlowEnd?: () => void
-}) {
-  if (entries.length === 0) {
-    return (
-      <>
-        <p className="emptyBoardTitle">The record is wide open.</p>
-        <GhostRows names={['Your name here', '—', '—']} />
-      </>
-    )
-  }
-
-  const leaderMs = entries.at(0)?.timeMs
-
-  return (
-    <ol className="leaderboardList">
-      {entries.map((entry, index) => (
-        <li
-          key={entry.id}
-          data-medal={index < 3 ? index + 1 : undefined}
-          className={entry.id === justSavedId ? 'justSaved' : undefined}
-          onAnimationEnd={entry.id === justSavedId ? onGlowEnd : undefined}
-          style={{ '--i': index } as CSSProperties}
-        >
-          <span className="leaderboardRank">{index + 1}</span>
-          <span className="leaderboardName">
-            <span className="leaderboardPlayer">{entry.name}</span>
-          </span>
-          <span className="leaderboardTime">
-            {formatTime(entry.timeMs)}
-            {index > 0 ? (
-              <GapToLeader timeMs={entry.timeMs} leaderMs={leaderMs} />
-            ) : null}
-          </span>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-// Two cannons of brand-colored paper — it must look like the poster tore
-// itself up, not party confetti. Self-terminates within 3 seconds.
-function ConfettiBurst() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const [done, setDone] = useState(false)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-
-    if (!canvas) {
-      return
-    }
-
-    const context = canvas.getContext('2d')
-
-    if (!context) {
-      return
-    }
-
-    const width = window.innerWidth
-    const height = window.innerHeight
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-
-    canvas.width = width * dpr
-    canvas.height = height * dpr
-    // CSS size set from the same values as the buffer: 100vh would stretch
-    // the canvas behind a collapsed mobile toolbar.
-    canvas.style.width = `${width}px`
-    canvas.style.height = `${height}px`
-    context.scale(dpr, dpr)
-
-    const colors = ['#e8472b', '#f3c33b', '#fffaf0', '#b8311a', '#19231d']
-    const particles = Array.from({ length: 140 }, (_, index) => {
-      const fromLeft = index % 2 === 0
-      const angle = ((60 + Math.random() * 18) * Math.PI) / 180
-      const speed = 900 + Math.random() * 700
-
-      return {
-        x: (fromLeft ? 0.08 : 0.92) * width,
-        y: 0.78 * height,
-        vx: Math.cos(angle) * speed * (fromLeft ? 1 : -1),
-        vy: -Math.sin(angle) * speed,
-        rotation: Math.random() * Math.PI * 2,
-        spin: Math.random() * 24 - 12,
-        size: 5 + Math.random() * 6,
-        circle: Math.random() < 0.3,
-        color: colors[index % colors.length],
-        life: 0,
-        ttl: 1.8 + Math.random() * 0.8,
-      }
-    })
-
-    let frameId = 0
-    let last = performance.now()
-    const startedAt = last
-
-    const tick = (now: number) => {
-      const dt = Math.min((now - last) / 1000, 0.05)
-
-      last = now
-      context.clearRect(0, 0, width, height)
-
-      let alive = 0
-
-      for (const particle of particles) {
-        particle.life += dt
-
-        if (particle.life >= particle.ttl) {
-          continue
-        }
-
-        alive += 1
-        particle.vy += 2200 * dt
-        particle.vx *= 0.985
-        particle.vy *= 0.985
-        particle.x += particle.vx * dt
-        particle.y += particle.vy * dt
-        particle.rotation += particle.spin * dt
-
-        const remaining = particle.ttl - particle.life
-
-        context.globalAlpha = remaining < 0.4 ? remaining / 0.4 : 1
-        context.fillStyle = particle.color
-
-        if (particle.circle) {
-          context.beginPath()
-          context.arc(particle.x, particle.y, particle.size / 2, 0, Math.PI * 2)
-          context.fill()
-        } else {
-          context.save()
-          context.translate(particle.x, particle.y)
-          context.rotate(particle.rotation)
-          context.fillRect(
-            -particle.size / 2,
-            -particle.size / 4,
-            particle.size,
-            particle.size / 2,
-          )
-          context.restore()
-        }
-      }
-
-      if (alive > 0 && now - startedAt < 3000) {
-        frameId = window.requestAnimationFrame(tick)
-      } else {
-        setDone(true)
-      }
-    }
-
-    frameId = window.requestAnimationFrame(tick)
-
-    return () => window.cancelAnimationFrame(frameId)
-  }, [])
-
-  if (done) {
-    return null
-  }
-
-  return (
-    <canvas className="confettiCanvas" ref={canvasRef} aria-hidden="true" />
   )
 }
 
