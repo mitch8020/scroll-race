@@ -24,13 +24,21 @@ describe('global board response boundary', () => {
             name: '<script>Slow</script>',
             timeMs: 3_500,
             eventFeet: 100,
-            device: 'A device label that is much too long',
+            device: 'Android',
             country: 'usa',
           },
           {
             id: 'fast',
             name: 'Fast',
             timeMs: 2_800,
+            eventFeet: 100,
+            device: 'iPhone',
+            country: 'US',
+          },
+          {
+            id: 'desktop',
+            name: 'Desktop',
+            timeMs: 2_700,
             eventFeet: 100,
             device: 'Mac',
             country: 'US',
@@ -51,7 +59,7 @@ describe('global board response boundary', () => {
         expect.objectContaining({
           id: 'slow',
           name: 'scriptSlowscript',
-          device: 'A device l',
+          device: 'Android',
           country: undefined,
         }),
       ],
@@ -65,7 +73,7 @@ describe('global board response boundary', () => {
       name: 'Synthetic',
       timeMs: 3_000,
       eventFeet: 100,
-      device: 'Other',
+      device: 'iPad',
     }
 
     expect(

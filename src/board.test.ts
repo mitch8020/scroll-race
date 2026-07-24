@@ -102,10 +102,26 @@ describe('world board validation', () => {
     }
   })
 
-  it('whitelists device classes', () => {
-    expect(
-      validateSubmission(goodSubmission({ device: '<img onerror=x>' })),
-    ).toMatchObject({ ok: true, device: 'Unknown' })
+  it('accepts mobile device classes and rejects desktop or unknown devices', () => {
+    for (const device of ['iPhone', 'iPad', 'Android']) {
+      expect(validateSubmission(goodSubmission({ device }))).toMatchObject({
+        ok: true,
+        device,
+      })
+    }
+
+    for (const device of [
+      'Windows',
+      'Mac',
+      'Other',
+      'Unknown',
+      '<img onerror=x>',
+    ]) {
+      expect(validateSubmission(goodSubmission({ device }))).toEqual({
+        ok: false,
+        reason: 'Desktop runs are not eligible',
+      })
+    }
   })
 })
 
@@ -169,6 +185,19 @@ describe('board insertion', () => {
     const fast = insertEntry(slow.board, entry('fast', 1_000))
 
     expect(fast.rank).toBe(1)
+  })
+
+  it('removes historical desktop entries before ranking mobile runs', () => {
+    const board: GlobalBoard = {
+      entries: [{ ...entry('desktop', 1_000), device: 'Mac' }],
+      total: 1,
+    }
+    const result = insertEntry(board, entry('mobile', 2_000))
+
+    expect(result.board.entries.map((candidate) => candidate.id)).toEqual([
+      'mobile',
+    ])
+    expect(result.rank).toBe(1)
   })
 })
 
@@ -264,6 +293,15 @@ describe('leaderboard function', () => {
     const response = await post(goodSubmission({ timeMs: 50 }))
 
     expect(response.status).toBe(422)
+  })
+
+  it('rejects desktop submissions with 422', async () => {
+    const response = await post(goodSubmission({ device: 'Windows' }))
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toEqual({
+      error: 'Desktop runs are not eligible',
+    })
   })
 
   it('rate-limits rapid posts from the same client', async () => {

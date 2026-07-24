@@ -10,6 +10,7 @@ import {
   randomRacerName,
   sanitizeName,
 } from './race'
+import { isMobileDeviceClass } from './device'
 
 export const GLOBAL_BOARD_LIMIT = 100
 export const GLOBAL_BOARD_PAGE = 25
@@ -34,16 +35,6 @@ export type GlobalBoard = {
   total: number
 }
 
-const ALLOWED_DEVICES = new Set([
-  'iPhone',
-  'iPad',
-  'Android',
-  'Windows',
-  'Mac',
-  'Other',
-  'Unknown',
-])
-
 export type AcceptedSubmission = {
   ok: true
   eventFeet: number
@@ -59,9 +50,10 @@ export type RejectedSubmission = {
 }
 
 // Server-side gate. Client-submitted scores are forgeable in principle, but
-// every rule the game enforces locally is re-enforced here: sanctioned event,
-// per-event legit-time floor (wind-assisted runs are below it by definition),
-// and a complete, monotonic splits trace whose final mark matches the time.
+// every rule the game enforces locally is re-enforced here: mobile device,
+// sanctioned event, per-event legit-time floor (wind-assisted runs are below
+// it by definition), and a complete, monotonic splits trace whose final mark
+// matches the time.
 export function validateSubmission(
   raw: unknown,
 ): AcceptedSubmission | RejectedSubmission {
@@ -97,13 +89,15 @@ export function validateSubmission(
     return { ok: false, reason: 'Splits don’t add up' }
   }
 
+  const device = typeof data.device === 'string' ? data.device : 'Unknown'
+
+  if (!isMobileDeviceClass(device)) {
+    return { ok: false, reason: 'Desktop runs are not eligible' }
+  }
+
   const name =
     sanitizeName(typeof data.name === 'string' ? data.name : '') ||
     randomRacerName()
-  const device =
-    typeof data.device === 'string' && ALLOWED_DEVICES.has(data.device)
-      ? data.device
-      : 'Unknown'
   const rawPpi = Number(data.ppi)
   const ppi = Number.isFinite(rawPpi)
     ? Math.min(Math.max(Math.round(rawPpi), 72), 220)
@@ -147,7 +141,8 @@ export function insertEntry(
   board: GlobalBoard | null,
   entry: GlobalEntry,
 ): { board: GlobalBoard; rank: number | null } {
-  const entries = [...(board?.entries ?? []), entry].sort(
+  const eligibleEntries = (board?.entries ?? []).filter(isGlobalEntryLike)
+  const entries = [...eligibleEntries, entry].sort(
     (left, right) => left.timeMs - right.timeMs,
   )
   const index = entries.findIndex((candidate) => candidate.id === entry.id)
@@ -178,6 +173,8 @@ export function isGlobalEntryLike(value: unknown): value is GlobalEntry {
     typeof entry.timeMs === 'number' &&
     Number.isFinite(entry.timeMs) &&
     eventFeet !== undefined &&
+    typeof entry.device === 'string' &&
+    isMobileDeviceClass(entry.device) &&
     entry.timeMs >= eventFeet * MIN_LEGIT_MS_PER_FOOT &&
     entry.timeMs <= MAX_CHALLENGE_MS
   )

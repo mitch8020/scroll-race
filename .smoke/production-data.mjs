@@ -1,5 +1,5 @@
 const EVENTS = [100, 250, 500, 1000]
-const DEVICES = ['iPhone', 'iPad', 'Android', 'Windows', 'Mac', 'Other']
+const DEVICES = ['iPhone', 'iPad', 'Android']
 const COUNTRIES = ['US', 'CA', 'GB', 'DE', 'FR', 'JP', 'KR', 'BR']
 const FIXTURE_DATE = '2026-07-01T12:00:00.000Z'
 

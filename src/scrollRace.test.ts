@@ -260,6 +260,20 @@ describe('share text', () => {
       'I cheated at Scroll Race and all I got was this asterisk ✱ https://x.test',
     )
   })
+
+  it('labels shared desktop runs as ineligible practice runs', () => {
+    const text = buildShareText({
+      timeMs: 7_580,
+      splitsMs: linearSplits,
+      origin: 'https://x.test',
+      eventFeet: 1000,
+      desktopRun: true,
+    })
+
+    expect(text).toBe(
+      'SCROLL RACE PRACTICE RUN 🖥️ 1000 FT · 7.58s ✱ Desktop runs aren’t eligible. https://x.test',
+    )
+  })
 })
 
 describe('speed conversions', () => {

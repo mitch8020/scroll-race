@@ -9,6 +9,10 @@ import { EVENTS, createProductionScaleData } from './production-data.mjs'
 
 const BASE_URL =
   process.env.SCROLL_RACE_READINESS_URL ?? 'http://127.0.0.1:20073'
+const MOBILE_USER_AGENT =
+  'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/149.0 Mobile Safari/537.36'
+const DESKTOP_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/149.0 Safari/537.36'
 const here = dirname(fileURLToPath(import.meta.url))
 const evidenceDirectory = join(here, 'readiness-evidence')
 const data = createProductionScaleData()
@@ -65,8 +69,13 @@ async function newPage({
   seed,
   reducedMotion = 'no-preference',
   shareMode,
+  userAgent = MOBILE_USER_AGENT,
 } = {}) {
-  const context = await browser.newContext({ viewport, reducedMotion })
+  const context = await browser.newContext({
+    viewport,
+    reducedMotion,
+    userAgent,
+  })
 
   scenarioContexts.push(context)
 
@@ -629,7 +638,7 @@ await scenario(
           name: '<script>Slow</script>',
           timeMs: 3_500,
           eventFeet: 100,
-          device: 'A device label that is much too long',
+          device: 'Android',
           country: 'usa',
         },
         {
@@ -637,7 +646,7 @@ await scenario(
           name: 'Fast',
           timeMs: 2_800,
           eventFeet: 100,
-          device: 'Mac',
+          device: 'iPhone',
           country: 'US',
         },
       ],
@@ -912,6 +921,41 @@ await scenario('PR-WIND-01', 'wind-assisted ineligible workflow', async () => {
   await screenshot(page, 'wind-assisted')
 
   return { blockedFromBoards: true, shareSelfReports: true }
+})
+
+await scenario('PR-DESKTOP-01', 'desktop practice-only workflow', async () => {
+  const submissions = []
+  const page = await newPage({
+    shareMode: 'reject',
+    userAgent: DESKTOP_USER_AGENT,
+  })
+
+  await mockLeaderboard(page, { submissions })
+  await goto(page)
+  await startAndSkipCountdown(page)
+  await scrollLegitimateRace(page, 100)
+  await page.getByText(/^DESKTOP RUN/).waitFor()
+  await expectVisible(page.getByText(/Desktop runs are practice only/))
+  await expectVisible(page.getByRole('button', { name: 'Not eligible' }))
+  assert.equal(submissions.length, 0)
+  assert.equal(
+    await page.evaluate(() =>
+      localStorage.getItem('scroll-race-leaderboard-v2-100'),
+    ),
+    null,
+  )
+  await page.getByRole('button', { name: 'Share this run' }).click()
+  await expectVisible(page.getByRole('textbox', { name: /Share text/ }))
+  assert.match(
+    await page.getByRole('textbox', { name: /Share text/ }).inputValue(),
+    /PRACTICE RUN.*Desktop runs/s,
+  )
+
+  return {
+    blockedFromBoards: true,
+    labeledAsPractice: true,
+    shareSelfReports: true,
+  }
 })
 
 await scenario('PR-MOTION-01', 'reduced-motion race workflow', async () => {

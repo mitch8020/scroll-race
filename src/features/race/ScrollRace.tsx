@@ -363,7 +363,7 @@ export function ScrollRace({
 
   const saveEntry = useCallback(
     (name: string) => {
-      if (!lastResult || lastResult.windAssisted) {
+      if (!lastResult || lastResult.ineligibilityReason !== null) {
         return
       }
 
@@ -455,7 +455,7 @@ export function ScrollRace({
     if (
       raceStatus === 'finished' &&
       lastResult &&
-      !lastResult.windAssisted &&
+      lastResult.ineligibilityReason === null &&
       !hasSaved &&
       savedName
     ) {
@@ -517,7 +517,7 @@ export function ScrollRace({
   const saveResult = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    if (!lastResult || lastResult.windAssisted) {
+    if (!lastResult || lastResult.ineligibilityReason !== null) {
       return
     }
 
@@ -561,6 +561,7 @@ export function ScrollRace({
         playerName: savedName || undefined,
         streakDays: lastResult.streakDays,
         windAssisted: lastResult.windAssisted,
+        desktopRun: lastResult.ineligibilityReason === 'desktop',
         defeated:
           lastResult.challenge &&
           lastResult.timeMs < lastResult.challenge.timeMs
@@ -844,8 +845,12 @@ export function ScrollRace({
           >
             {raceStatus === 'finished' && lastResult ? (
               <>
-                {lastResult.windAssisted ? (
-                  <p className="windStamp">WIND-ASSISTED ✱</p>
+                {lastResult.ineligibilityReason ? (
+                  <p className="windStamp">
+                    {lastResult.ineligibilityReason === 'desktop'
+                      ? 'DESKTOP RUN ✱'
+                      : 'WIND-ASSISTED ✱'}
+                  </p>
                 ) : lastResult.isRecord ? (
                   <p className="recordBadge">★ New record</p>
                 ) : (
@@ -853,7 +858,7 @@ export function ScrollRace({
                     {rankTitle(lastResult.timeMs, lastResult.eventFeet)}
                   </p>
                 )}
-                {!lastResult.windAssisted &&
+                {!lastResult.ineligibilityReason &&
                 !lastResult.isRecord &&
                 (lastResult.firstOfDay || lastResult.newDailyBest) ? (
                   <p className="dayPill">
@@ -867,12 +872,13 @@ export function ScrollRace({
                 </h2>
                 <p className="resultTime">
                   {formatTime(lastResult.timeMs)}
-                  {lastResult.windAssisted ? '✱' : ''}
+                  {lastResult.ineligibilityReason ? '✱' : ''}
                 </p>
-                {lastResult.windAssisted ? (
+                {lastResult.ineligibilityReason ? (
                   <p className="windNote">
-                    Times set with the End key don’t count. The ruler saw
-                    everything.
+                    {lastResult.ineligibilityReason === 'desktop'
+                      ? 'Desktop runs are practice only. Race on a phone or tablet to qualify.'
+                      : 'Times set with the End key don’t count. The ruler saw everything.'}
                   </p>
                 ) : (
                   <>
@@ -944,7 +950,7 @@ export function ScrollRace({
                     onFocus={(event) => event.currentTarget.select()}
                   />
                 ) : null}
-                {lastResult.windAssisted ? (
+                {lastResult.ineligibilityReason ? (
                   <button
                     className="secondaryButton notEligible"
                     disabled

@@ -15,14 +15,14 @@ roles are stateful personas:
 
 ## Routes
 
-| ID    | Route                                           | Acceptance criteria                                                                                                                     | Finite risk-based edges                                                                                                         |
-| ----- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| RT-01 | `GET /`                                         | Returns the production shell, metadata, manifest link, one interactive race, and no route error.                                        | Fresh/returning storage; mobile/desktop; JS hydration; external font failure.                                                   |
-| RT-02 | `GET /?beat=&event=&by=`                        | Strictly parses sanctioned events and eligible integer times, sanitizes the challenger, and keeps the event pinned while active.        | Missing, blank, decimal, negative, junk, sub-eligible, over-max, legacy no-event, unknown event, encoded unsafe name.           |
-| RT-03 | `GET /api/leaderboard?event=`                   | Returns only the selected sanctioned event, top 25, accurate nonnegative total, JSON content type, and `no-store`.                      | Empty board; unknown event; 100-row stored cap; corrupt blob; concurrent reads.                                                 |
-| RT-04 | `POST /api/leaderboard`                         | Accepts an eligible sanitized score once per cooldown, returns rank/total, and writes only the context-scoped board outside production. | Bad method/JSON/body size/event/time/splits/device/PPI; wind-assisted floor; rate limit; off-board rank; ties; separate events. |
-| RT-05 | `/manifest.json`, `/robots.txt`, `/favicon.ico` | Each asset returns HTTP 200 from the production preview.                                                                                | Cache-independent direct request.                                                                                               |
-| RT-06 | Five creator destinations                       | Each opens in a new tab with `rel=noreferrer` and an accessible name.                                                                   | Personal site, GitHub, Instagram, LinkedIn, Discord.                                                                            |
+| ID    | Route                                           | Acceptance criteria                                                                                                                            | Finite risk-based edges                                                                                                                         |
+| ----- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| RT-01 | `GET /`                                         | Returns the production shell, metadata, manifest link, one interactive race, and no route error.                                               | Fresh/returning storage; mobile/desktop; JS hydration; external font failure.                                                                   |
+| RT-02 | `GET /?beat=&event=&by=`                        | Strictly parses sanctioned events and eligible integer times, sanitizes the challenger, and keeps the event pinned while active.               | Missing, blank, decimal, negative, junk, sub-eligible, over-max, legacy no-event, unknown event, encoded unsafe name.                           |
+| RT-03 | `GET /api/leaderboard?event=`                   | Returns only the selected sanctioned event, top 25, accurate nonnegative total, JSON content type, and `no-store`.                             | Empty board; unknown event; 100-row stored cap; corrupt blob; concurrent reads.                                                                 |
+| RT-04 | `POST /api/leaderboard`                         | Accepts an eligible sanitized mobile score once per cooldown, returns rank/total, and writes only the context-scoped board outside production. | Bad method/JSON/body size/event/time/splits/device/PPI; desktop device; wind-assisted floor; rate limit; off-board rank; ties; separate events. |
+| RT-05 | `/manifest.json`, `/robots.txt`, `/favicon.ico` | Each asset returns HTTP 200 from the production preview.                                                                                       | Cache-independent direct request.                                                                                                               |
+| RT-06 | Five creator destinations                       | Each opens in a new tab with `rel=noreferrer` and an accessible name.                                                                          | Personal site, GitHub, Instagram, LinkedIn, Discord.                                                                                            |
 
 ## Controls, displays, and workflows
 
@@ -61,7 +61,7 @@ campaign; visual screenshots remain in the evidence directory.
 | UI-27 | Run it back button                          | Starts another countdown and changes copy after three non-PB attempts.                                                                                               | PB reset; three-session misses; challenge retry.                                                                      |
 | UI-28 | Finish keyboard shortcuts                   | `R` and Enter restart only from body/finish heading, never steal input/button/link keystrokes, and ignore repeats/composition/modifiers.                             | Focus on input/button/link; Ctrl/Meta/Alt; IME composition.                                                           |
 | UI-29 | Back to the start button                    | Restores intro at top without clearing valid persistent data.                                                                                                        | Saved/unsaved; challenge loss; share fallback open.                                                                   |
-| UI-30 | Not eligible disabled button                | Replaces saving for wind-assisted results and cannot be activated.                                                                                                   | End-key/teleport; sub-minimum time; share remains available.                                                          |
+| UI-30 | Not eligible disabled button                | Replaces saving for wind-assisted and desktop results and cannot be activated.                                                                                       | End-key/teleport; sub-minimum time; desktop practice run; share remains available.                                    |
 | UI-31 | Wind-assisted detection and card            | Detects a large per-frame jump or sub-event time floor, excludes PB/streak/boards, and self-reports in shared text.                                                  | Final jump between frames; jank-scaled allowance; every event floor.                                                  |
 | UI-32 | Confetti, tape, speed lines, audio, haptics | Enhance eligible play and terminate; all motion-heavy visuals are suppressed under reduced motion.                                                                   | Mid-session preference change; no canvas/audio/vibrate; record vs nonrecord.                                          |
 | UI-33 | Leaderboard rows and totals                 | Names, time, gap, device, and country cannot overflow or render hostile/wrong-event/negative data.                                                                   | Empty, 1, 10, 25, 100 stored; duplicate ids; long labels; invalid country; negative/decimal total.                    |
@@ -69,15 +69,15 @@ campaign; visual screenshots remain in the evidence directory.
 
 ## State model
 
-| State family | Finite states                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------------- |
-| Race         | `intro`, `countdown`, `racing`, `finished eligible`, `finished wind-assisted`                     |
-| Result save  | `unsaved`, `saved`, `editing name`, `world rank pending`, `world rank ready/error`                |
-| Board        | `loading`, `ready empty`, `ready populated`, `error with local fallback`; tab `world` or `device` |
-| Challenge    | `absent`, `pending`, `won then cleared on save`, `lost and retained`, `dismissed by event change` |
-| Share        | `idle`, `native sheet`, `clipboard copied`, `manual-copy fallback`                                |
-| Preferences  | Sound on/off; calibration 72-220; reduced motion on/off                                           |
-| Persistence  | Fresh, current, legacy, malformed/unavailable                                                     |
+| State family | Finite states                                                                                              |
+| ------------ | ---------------------------------------------------------------------------------------------------------- |
+| Race         | `intro`, `countdown`, `racing`, `finished eligible`, `finished wind-assisted`, `finished desktop practice` |
+| Result save  | `unsaved`, `saved`, `editing name`, `world rank pending`, `world rank ready/error`                         |
+| Board        | `loading`, `ready empty`, `ready populated`, `error with local fallback`; tab `world` or `device`          |
+| Challenge    | `absent`, `pending`, `won then cleared on save`, `lost and retained`, `dismissed by event change`          |
+| Share        | `idle`, `native sheet`, `clipboard copied`, `manual-copy fallback`                                         |
+| Preferences  | Sound on/off; calibration 72-220; reduced motion on/off                                                    |
+| Persistence  | Fresh, current, legacy, malformed/unavailable                                                              |
 
 No separate confirmation modal exists. The intro is the only ARIA dialog;
 calibration is an inline disclosure, countdown is a blocking overlay, and the

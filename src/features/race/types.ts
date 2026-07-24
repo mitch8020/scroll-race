@@ -12,12 +12,15 @@ export type Challenge = {
   eventFeet: number
 }
 
+export type RaceIneligibilityReason = 'wind-assisted' | 'desktop'
+
 export type RaceResult = {
   timeMs: number
   eventFeet: number
   splitsMs: Array<number>
   topFtps: number
   windAssisted: boolean
+  ineligibilityReason: RaceIneligibilityReason | null
   prevPbMs: number | null
   isPb: boolean
   isRecord: boolean

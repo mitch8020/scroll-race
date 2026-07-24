@@ -112,6 +112,39 @@ describe('local race store', () => {
     expect(readLeaderboard(250)).toEqual([])
   })
 
+  it('filters explicitly desktop-labeled local leaderboard rows', () => {
+    localStorage.setItem(
+      'scroll-race-leaderboard-v2-100',
+      JSON.stringify([
+        {
+          id: 'phone',
+          name: 'Phone',
+          timeMs: 4_000,
+          completedAt: '2026-07-23T00:00:00.000Z',
+          device: 'iPhone',
+        },
+        {
+          id: 'desktop',
+          name: 'Desktop',
+          timeMs: 3_000,
+          completedAt: '2026-07-23T00:00:00.000Z',
+          device: 'Windows',
+        },
+        {
+          id: 'legacy',
+          name: 'Legacy',
+          timeMs: 5_000,
+          completedAt: '2026-06-01T00:00:00.000Z',
+        },
+      ]),
+    )
+
+    expect(readLeaderboard(100).map((entry) => entry.id)).toEqual([
+      'phone',
+      'legacy',
+    ])
+  })
+
   it('tracks run and session counters independently', () => {
     expect(bumpRunCount()).toBe(1)
     expect(bumpRunCount()).toBe(2)

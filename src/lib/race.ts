@@ -254,15 +254,21 @@ export type ShareInput = {
   playerName?: string
   streakDays?: number
   windAssisted?: boolean
+  desktopRun?: boolean
   defeated?: string
 }
 
 export function buildShareText(input: ShareInput) {
+  const eventFeet = input.eventFeet ?? DEFAULT_EVENT_FEET
+
+  if (input.desktopRun) {
+    return `SCROLL RACE PRACTICE RUN 🖥️ ${eventFeet} FT · ${formatTime(input.timeMs)} ✱ Desktop runs aren’t eligible. ${input.origin}`
+  }
+
   if (input.windAssisted) {
     return `I cheated at Scroll Race and all I got was this asterisk ✱ ${input.origin}`
   }
 
-  const eventFeet = input.eventFeet ?? DEFAULT_EVENT_FEET
   const headline = input.defeated
     ? `I just took down ${input.defeated}’s ${eventFeet} ft record 🏁 ${formatTime(input.timeMs)}`
     : `SCROLL RACE 🏁 ${eventFeet} FT · ${formatTime(input.timeMs)}`

@@ -1,4 +1,5 @@
 import { CSS_PIXELS_PER_INCH, normalizePixelsPerInch } from './course'
+import { classifyDevice, isMobileDeviceClass } from './device'
 import {
   DEFAULT_EVENT_FEET,
   clipName,
@@ -179,6 +180,9 @@ function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
     typeof entry.timeMs === 'number' &&
     Number.isFinite(entry.timeMs) &&
     typeof entry.completedAt === 'string' &&
+    (entry.device === undefined ||
+      (typeof entry.device === 'string' &&
+        isMobileDeviceClass(entry.device))) &&
     (entry.splitsMs === undefined ||
       (Array.isArray(entry.splitsMs) &&
         entry.splitsMs.every((split) => typeof split === 'number')))
@@ -255,32 +259,7 @@ export function detectDevice() {
     return 'Unknown'
   }
 
-  const ua = navigator.userAgent
-
-  if (/iPhone/i.test(ua)) {
-    return 'iPhone'
-  }
-
-  if (
-    /iPad/i.test(ua) ||
-    (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
-  ) {
-    return 'iPad'
-  }
-
-  if (/Android/i.test(ua)) {
-    return 'Android'
-  }
-
-  if (/Windows/i.test(ua)) {
-    return 'Windows'
-  }
-
-  if (/Macintosh/i.test(ua)) {
-    return 'Mac'
-  }
-
-  return 'Other'
+  return classifyDevice(navigator.userAgent, navigator.maxTouchPoints)
 }
 
 export function readStoredName() {

@@ -9,8 +9,10 @@ import {
   percentAtTime,
   timeAtPercent,
 } from '../../lib/race'
+import { isMobileDeviceClass } from '../../lib/device'
 import {
   bumpRunCount,
+  detectDevice,
   readPb,
   readSessionNoPbRuns,
   updateStreakOnFinish,
@@ -19,7 +21,13 @@ import {
 } from '../../lib/localRaceStore'
 import * as sfx from '../../lib/sfx'
 import { MILESTONE_PERCENTS } from './courseView'
-import type { Challenge, GhostPlan, RaceResult, RaceStatus } from './types'
+import type {
+  Challenge,
+  GhostPlan,
+  RaceIneligibilityReason,
+  RaceResult,
+  RaceStatus,
+} from './types'
 
 const COUNTDOWN_FROM = 3
 const COUNTDOWN_BEAT_MS = 750
@@ -98,6 +106,12 @@ export function useRaceRuntime({
 
   // Each event keeps its own personal best.
   useEffect(() => {
+    if (!isMobileDeviceClass(detectDevice())) {
+      setPbMs(null)
+
+      return
+    }
+
     const storedPb = readPb(activeEventFeet) ?? pbRef.current[activeEventFeet]
 
     setPbMs(storedPb ?? null)
@@ -290,6 +304,14 @@ export function useRaceRuntime({
         windAssisted = true
       }
 
+      const ineligibilityReason: RaceIneligibilityReason | null =
+        !isMobileDeviceClass(detectDevice())
+          ? 'desktop'
+          : windAssisted
+            ? 'wind-assisted'
+            : null
+      const eligible = ineligibilityReason === null
+
       if (speedLinesRef.current) {
         speedLinesRef.current.style.opacity = '0'
       }
@@ -301,8 +323,10 @@ export function useRaceRuntime({
 
       // Storage is best-effort: if writes silently fail, the in-session ref
       // keeps PB deltas honest instead of claiming a first time every run.
-      const prevPb = readPb(raceFeet) ?? pbRef.current[raceFeet] ?? null
-      const isPb = !windAssisted && (prevPb === null || finalTime < prevPb)
+      const prevPb = eligible
+        ? (readPb(raceFeet) ?? pbRef.current[raceFeet] ?? null)
+        : null
+      const isPb = eligible && (prevPb === null || finalTime < prevPb)
 
       if (isPb) {
         writePb(raceFeet, finalTime)
@@ -311,15 +335,13 @@ export function useRaceRuntime({
       }
 
       const isRecord =
-        !windAssisted &&
-        boardBestAtStart !== null &&
-        finalTime < boardBestAtStart
+        eligible && boardBestAtStart !== null && finalTime < boardBestAtStart
 
       let streakNow = 0
       let firstOfDay = false
       let newDailyBest = false
 
-      if (!windAssisted) {
+      if (eligible) {
         const update = updateStreakOnFinish(finalTime)
 
         streakNow = update.streak
@@ -349,6 +371,7 @@ export function useRaceRuntime({
         splitsMs: splits.slice(),
         topFtps: topVelocity,
         windAssisted,
+        ineligibilityReason,
         prevPbMs: prevPb,
         isPb,
         isRecord,
