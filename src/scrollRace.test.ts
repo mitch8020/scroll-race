@@ -148,7 +148,7 @@ describe('challenge URL hygiene', () => {
     expect(parseChallengeMs('4203.4')).toBe(4_203)
     expect(parseChallengeMs(4_203)).toBe(4_203)
     expect(parseChallengeMs('99999999')).toBe(5_999_000)
-    expect(parseChallengeMs('999')).toBeUndefined()
+    expect(parseChallengeMs('499')).toBeUndefined()
     expect(parseChallengeMs('-9')).toBeUndefined()
     expect(parseChallengeMs('')).toBeUndefined()
     expect(parseChallengeMs(' ')).toBeUndefined()
@@ -158,18 +158,19 @@ describe('challenge URL hygiene', () => {
   })
 
   it('scales the challenge floor with the event so links cannot grief', () => {
-    // The floor equals the wind-assist minimum (10ms/ft): any accepted
+    // The floor equals the wind-assist minimum (5ms/ft): any accepted
     // challenge is beatable without the winner being auto-flagged.
     for (const event of EVENTS) {
-      const floor = event.feet * 10
+      const floor = event.feet * 5
 
       expect(parseChallengeMs(String(floor - 1), event.feet)).toBeUndefined()
       expect(parseChallengeMs(String(floor), event.feet)).toBe(floor)
     }
 
-    expect(parseChallengeMs('5000', 1000)).toBeUndefined()
+    expect(parseChallengeMs('4999', 1000)).toBeUndefined()
+    expect(parseChallengeMs('5000', 1000)).toBe(5_000)
     expect(parseChallengeMs('15000', 1000)).toBe(15_000)
-    expect(parseChallengeMs('2499', 250)).toBeUndefined()
+    expect(parseChallengeMs('1249', 250)).toBeUndefined()
   })
 })
 

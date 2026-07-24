@@ -53,15 +53,15 @@ describe('world board validation', () => {
   it('rejects sub-legit (wind-assisted) times per event', () => {
     expect(
       validateSubmission(
-        goodSubmission({ timeMs: 800, splitsMs: goodSplits(800) }),
+        goodSubmission({ timeMs: 400, splitsMs: goodSplits(400) }),
       ),
     ).toMatchObject({ ok: false })
     expect(
       validateSubmission(
         goodSubmission({
           eventFeet: 1000,
-          timeMs: 8_000,
-          splitsMs: goodSplits(8_000),
+          timeMs: 4_999,
+          splitsMs: goodSplits(4_999),
         }),
       ),
     ).toMatchObject({ ok: false })
@@ -69,8 +69,8 @@ describe('world board validation', () => {
       validateSubmission(
         goodSubmission({
           eventFeet: 1000,
-          timeMs: 12_000,
-          splitsMs: goodSplits(12_000),
+          timeMs: 5_000,
+          splitsMs: goodSplits(5_000),
         }),
       ),
     ).toMatchObject({ ok: true })

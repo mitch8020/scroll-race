@@ -263,7 +263,7 @@ async function scrollLegitimateRace(page, eventFeet) {
       new Promise((resolve) => setTimeout(resolve, milliseconds))
     const maxScroll = document.documentElement.scrollHeight - window.innerHeight
     const steps = Math.max(Math.ceil(maxScroll / 4_500), 2)
-    const delayMs = Math.max(25, Math.ceil((feet * 10 + 800) / (steps - 1)))
+    const delayMs = Math.max(25, Math.ceil((feet * 5 + 800) / (steps - 1)))
 
     for (let step = 1; step <= steps; step += 1) {
       window.scrollTo(0, Math.round((maxScroll * step) / steps))
@@ -565,7 +565,7 @@ await scenario(
     assert.equal(new URL(page.url()).search, '')
     assert.equal(await page.getByText('Challenge received').count(), 0)
 
-    await page.goto(`${BASE_URL}/?beat=999&event=999&by=%3Cscript%3E`, {
+    await page.goto(`${BASE_URL}/?beat=499&event=999&by=%3Cscript%3E`, {
       waitUntil: 'domcontentloaded',
     })
     await page.locator('.introScreen').waitFor()
@@ -801,7 +801,7 @@ await scenario(
         (submission) =>
           submission.name === 'Synthetic Tester' &&
           submission.splitsMs.length === 101 &&
-          submission.timeMs >= submission.eventFeet * 10,
+          submission.timeMs >= submission.eventFeet * 5,
       ),
       'Every world submission should be named, complete, and eligible',
     )

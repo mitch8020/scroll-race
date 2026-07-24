@@ -8,10 +8,10 @@
 // old stored entries (per-foot splits) fully compatible.
 
 export const PERCENT_STEPS = 100
-// A legit scroll needs at least ~10ms per foot of course; the challenge
+// A legit scroll needs at least ~5ms per foot of course; the challenge
 // floor scales with the event so nobody can mint a link that auto-flags its
 // own winner as wind-assisted — a griefing link.
-export const MIN_LEGIT_MS_PER_FOOT = 10
+export const MIN_LEGIT_MS_PER_FOOT = 5
 export const MAX_CHALLENGE_MS = 5_999_000
 
 export function minChallengeMs(eventFeet: number) {
