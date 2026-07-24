@@ -572,7 +572,26 @@ export function ScrollRace({
     }
 
     if (typeof navigator.share === 'function') {
-      navigator.share({ text }).catch(() => {})
+      const recoverNativeShare = (error: unknown) => {
+        // Closing the native sheet is an intentional no-op. If the platform
+        // advertises sharing but cannot complete it, keep the button useful
+        // by exposing the same manual-copy fallback as older browsers.
+        const cancelled =
+          typeof error === 'object' &&
+          error !== null &&
+          'name' in error &&
+          error.name === 'AbortError'
+
+        if (!cancelled) {
+          setShareFallback(text)
+        }
+      }
+
+      try {
+        void navigator.share({ text }).catch(recoverNativeShare)
+      } catch (error) {
+        recoverNativeShare(error)
+      }
 
       return
     }
@@ -762,6 +781,11 @@ export function ScrollRace({
       <section
         className="raceCourse"
         aria-label={`${activeEventFeet}-foot scroll race course`}
+        aria-hidden={
+          raceStatus === 'intro' || raceStatus === 'countdown'
+            ? true
+            : undefined
+        }
       >
         <RulerRail ticks={ticks} />
 
@@ -998,6 +1022,7 @@ export function ScrollRace({
           className="introScreen"
           role="dialog"
           aria-label="Scroll Race"
+          aria-modal="true"
           data-returning={runCount > 0 ? '' : undefined}
         >
           <div className="introGrain" aria-hidden="true" />

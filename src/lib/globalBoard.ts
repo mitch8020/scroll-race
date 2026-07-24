@@ -3,7 +3,7 @@
 
 import type { GlobalEntry } from './board'
 import { GLOBAL_BOARD_PAGE, isGlobalEntryLike } from './board'
-import { clipName } from './race'
+import { sanitizeName } from './race'
 
 const API_PATH = '/api/leaderboard'
 const FETCH_TIMEOUT_MS = 6_000
@@ -28,6 +28,59 @@ export type ScoreSubmission = {
   device: string
 }
 
+export function parseGlobalBoardResponse(
+  data: unknown,
+  eventFeet: number,
+): GlobalBoardView | null {
+  if (!data || typeof data !== 'object') {
+    return null
+  }
+
+  const body = data as Record<string, unknown>
+
+  if (!Array.isArray(body.entries)) {
+    return null
+  }
+
+  const seenIds = new Set<string>()
+  const entries = body.entries
+    .filter(isGlobalEntryLike)
+    .filter((entry) => entry.eventFeet === eventFeet)
+    .sort((left, right) => left.timeMs - right.timeMs)
+    .filter((entry) => {
+      if (seenIds.has(entry.id)) {
+        return false
+      }
+
+      seenIds.add(entry.id)
+
+      return true
+    })
+    .slice(0, GLOBAL_BOARD_PAGE)
+    // Never trust the wire: normalize every rendered field.
+    .map((entry) => ({
+      ...entry,
+      name: sanitizeName(entry.name) || 'Racer',
+      device:
+        typeof entry.device === 'string'
+          ? entry.device.slice(0, 10)
+          : 'Unknown',
+      country:
+        typeof entry.country === 'string' && /^[A-Z]{2}$/.test(entry.country)
+          ? entry.country
+          : undefined,
+    }))
+  const wireTotal =
+    typeof body.total === 'number' && Number.isFinite(body.total)
+      ? Math.max(0, Math.floor(body.total))
+      : 0
+
+  return {
+    entries,
+    total: Math.max(wireTotal, entries.length),
+  }
+}
+
 export async function fetchGlobalBoard(
   eventFeet: number,
   signal?: AbortSignal,
@@ -44,39 +97,7 @@ export async function fetchGlobalBoard(
 
     const data: unknown = await response.json()
 
-    if (!data || typeof data !== 'object') {
-      return null
-    }
-
-    const body = data as Record<string, unknown>
-
-    if (!Array.isArray(body.entries)) {
-      return null
-    }
-
-    return {
-      entries: body.entries
-        .filter(isGlobalEntryLike)
-        .slice(0, GLOBAL_BOARD_PAGE)
-        // Never trust the wire: clamp every rendered field, not just names.
-        .map((entry) => ({
-          ...entry,
-          name: clipName(entry.name) || 'Racer',
-          device:
-            typeof entry.device === 'string'
-              ? entry.device.slice(0, 10)
-              : 'Unknown',
-          country:
-            typeof entry.country === 'string' &&
-            /^[A-Z]{2}$/.test(entry.country)
-              ? entry.country
-              : undefined,
-        })),
-      total:
-        typeof body.total === 'number' && Number.isFinite(body.total)
-          ? body.total
-          : 0,
-    }
+    return parseGlobalBoardResponse(data, eventFeet)
   } catch {
     return null
   }

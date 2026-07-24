@@ -169,12 +169,16 @@ export function isGlobalEntryLike(value: unknown): value is GlobalEntry {
   }
 
   const entry = value as Record<string, unknown>
+  const eventFeet = parseEventFeet(entry.eventFeet)
 
   return (
     typeof entry.id === 'string' &&
+    entry.id.length > 0 &&
     typeof entry.name === 'string' &&
     typeof entry.timeMs === 'number' &&
     Number.isFinite(entry.timeMs) &&
-    typeof entry.eventFeet === 'number'
+    eventFeet !== undefined &&
+    entry.timeMs >= eventFeet * MIN_LEGIT_MS_PER_FOOT &&
+    entry.timeMs <= MAX_CHALLENGE_MS
   )
 }
