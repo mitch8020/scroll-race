@@ -15,7 +15,16 @@ import {
 import type { CSSProperties, FormEvent } from 'react'
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { RaceEvent } from '../lib/race'
+import {
+  clamp,
+  createRulerTicks,
+  CSS_PIXELS_PER_INCH,
+  INCHES_PER_FOOT,
+  MAX_PIXELS_PER_INCH,
+  MIN_PIXELS_PER_INCH,
+  normalizePixelsPerInch,
+} from '../lib/course'
+import type { RulerTick } from '../lib/course'
 import {
   DEFAULT_EVENT_FEET,
   EVENTS,
@@ -41,9 +50,34 @@ import {
 import type { GlobalEntry } from '../lib/board'
 import { SUBMIT_COOLDOWN_MS } from '../lib/board'
 import { fetchGlobalBoard, submitToGlobalBoard } from '../lib/globalBoard'
+import type { LeaderboardEntry } from '../lib/localRaceStore'
+import {
+  MAX_LEADERBOARD_ENTRIES,
+  bumpRunCount,
+  createEntryId,
+  detectDevice,
+  getStreakRecency,
+  readLeaderboard,
+  readPb,
+  readPixelsPerInch,
+  readRunCount,
+  readSessionNoPbRuns,
+  readStoredEventFeet,
+  readStoredName,
+  readStreak,
+  updateStreakOnFinish,
+  writeLeaderboard,
+  writePb,
+  writePixelsPerInch,
+  writeSessionNoPbRuns,
+  writeStoredEventFeet,
+  writeStoredName,
+  writeStreak,
+} from '../lib/localRaceStore'
 import * as sfx from '../lib/sfx'
 
 export { formatTime }
+export { createRulerTicks, normalizePixelsPerInch } from '../lib/course'
 
 export const Route = createFileRoute('/')({
   validateSearch: (search: Record<string, unknown>) => {
@@ -62,18 +96,6 @@ export const Route = createFileRoute('/')({
   component: Home,
 })
 
-const INCHES_PER_FOOT = 12
-const CSS_PIXELS_PER_INCH = 96
-const MIN_PIXELS_PER_INCH = 72
-const MAX_PIXELS_PER_INCH = 220
-const LEGACY_LEADERBOARD_KEY = 'scroll-race-leaderboard-v1'
-const LEGACY_PB_KEY = 'scroll-race-pb-v1'
-const SCALE_STORAGE_KEY = 'scroll-race-pixels-per-inch-v1'
-const NAME_STORAGE_KEY = 'scroll-race-player-name-v1'
-const STREAK_STORAGE_KEY = 'scroll-race-streak-v1'
-const RUNS_STORAGE_KEY = 'scroll-race-runs-v1'
-const EVENT_STORAGE_KEY = 'scroll-race-event-v1'
-const SESSION_NO_PB_KEY = 'scroll-race-session-no-pb-runs'
 const MEET_BANNER_TEXT =
   'OFFICIAL SCROLL MEET · ALL THUMBS WELCOME · SANCTIONED BY NOBODY'
 // Brand marks as Simple Icons path data (CC0): lucide ships no Discord glyph,
@@ -116,7 +138,6 @@ const CREDIT_LINKS: Array<{
     brand: 'discord',
   },
 ]
-const MAX_LEADERBOARD_ENTRIES = 10
 // Milestone gates sit at quarters of the course, whatever its length.
 const MILESTONE_PERCENTS = [25, 50, 75]
 const COUNTDOWN_FROM = 3
@@ -150,35 +171,7 @@ const DECADE_MARKS = [
   { percent: 90, copy: 'SEND IT' },
 ]
 
-function leaderboardKey(eventFeet: number) {
-  return `scroll-race-leaderboard-v2-${eventFeet}`
-}
-
-function pbKey(eventFeet: number) {
-  return `scroll-race-pb-v2-${eventFeet}`
-}
-
 type RaceStatus = 'intro' | 'countdown' | 'racing' | 'finished'
-
-type RulerTick = {
-  inch: number
-  top: number
-  kind: 'foot' | 'half' | 'quarter' | 'inch'
-  label?: string
-}
-
-// Entries carry the metadata a future public board needs: event distance,
-// the px/in calibration the run used, and a coarse device class.
-type LeaderboardEntry = {
-  id: string
-  name: string
-  timeMs: number
-  completedAt: string
-  splitsMs?: Array<number>
-  eventFeet?: number
-  ppi?: number
-  device?: string
-}
 
 type Challenge = {
   name: string
@@ -210,13 +203,6 @@ type GhostPlan =
       totalMs: number
       splitsMs: Array<number> | null
     }
-
-type StreakData = {
-  lastDay: string
-  streak: number
-  prevStreak: number
-  todayBestMs: number | null
-}
 
 type GlobalBoardState =
   | { status: 'loading' }
@@ -337,25 +323,16 @@ function Home() {
     setSavedName(storedName)
     setPlayerName(storedName)
 
-    const today = localDay(0)
-    const yesterday = localDay(-1)
     const streak = readStreak()
+    const streakRecency = getStreakRecency(streak)
 
-    setStreakDays(
-      streak.lastDay === today || streak.lastDay === yesterday
-        ? streak.streak
-        : 0,
-    )
+    setStreakDays(streakRecency === 'lapsed' ? 0 : streak.streak)
 
     // The lapse note shows exactly once after a 3+ day streak dies.
     if (streak.prevStreak >= 3) {
       setLapsedStreak(streak.prevStreak)
       writeStreak({ ...streak, prevStreak: 0 })
-    } else if (
-      streak.streak >= 3 &&
-      streak.lastDay !== today &&
-      streak.lastDay !== yesterday
-    ) {
+    } else if (streak.streak >= 3 && streakRecency === 'lapsed') {
       setLapsedStreak(streak.streak)
       writeStreak({ ...streak, streak: 0, prevStreak: 0 })
     }
@@ -2309,402 +2286,10 @@ function ConfettiBurst() {
   )
 }
 
-export function createRulerTicks(
-  pixelsPerInch = CSS_PIXELS_PER_INCH,
-  event: RaceEvent = EVENTS[0],
-): Array<RulerTick> {
-  // Tick spacing coarsens with course length so the DOM stays ~1,200 nodes:
-  // every inch at 100 ft, every foot at 1000 ft.
-  const tickCount =
-    Math.floor((event.feet * INCHES_PER_FOOT) / event.tickEveryInches) + 1
-
-  return Array.from({ length: tickCount }, (_, index) => {
-    const inch = index * event.tickEveryInches
-    const wholeFeet = Math.floor(inch / INCHES_PER_FOOT)
-    const inchInFoot = inch % INCHES_PER_FOOT
-    const kind =
-      inchInFoot === 0
-        ? wholeFeet % event.majorTickFeet === 0
-          ? 'foot'
-          : 'half'
-        : inchInFoot === 6
-          ? 'half'
-          : inchInFoot % 3 === 0
-            ? 'quarter'
-            : 'inch'
-
-    return {
-      inch,
-      top: inch * pixelsPerInch,
-      kind,
-      label:
-        inchInFoot === 0 && wholeFeet % event.labelEveryFeet === 0
-          ? `${wholeFeet} ft`
-          : undefined,
-    }
-  })
-}
-
-function localDay(offsetDays: number) {
-  // Calendar arithmetic, not epoch math: a fixed 86,400,000ms offset misses
-  // "yesterday" across DST transitions and would break honest streaks.
-  const date = new Date()
-
-  date.setDate(date.getDate() + offsetDays)
-
-  return date.toLocaleDateString('sv')
-}
-
-function readPixelsPerInch() {
-  if (typeof window === 'undefined') {
-    return CSS_PIXELS_PER_INCH
-  }
-
-  const storedValue = Number(window.localStorage.getItem(SCALE_STORAGE_KEY))
-
-  return normalizePixelsPerInch(storedValue || CSS_PIXELS_PER_INCH)
-}
-
-function writePixelsPerInch(pixelsPerInch: number) {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  window.localStorage.setItem(
-    SCALE_STORAGE_KEY,
-    String(normalizePixelsPerInch(pixelsPerInch)),
-  )
-}
-
-function readLeaderboard(eventFeet: number): Array<LeaderboardEntry> {
-  if (typeof window === 'undefined') {
-    return []
-  }
-
-  try {
-    // Boards saved before events existed migrate to the 100 ft event, whose
-    // per-foot splits are identical to per-percent splits.
-    const rawLeaderboard =
-      window.localStorage.getItem(leaderboardKey(eventFeet)) ??
-      (eventFeet === DEFAULT_EVENT_FEET
-        ? window.localStorage.getItem(LEGACY_LEADERBOARD_KEY)
-        : null)
-
-    if (!rawLeaderboard) {
-      return []
-    }
-
-    const parsedLeaderboard: unknown = JSON.parse(rawLeaderboard)
-
-    if (!Array.isArray(parsedLeaderboard)) {
-      return []
-    }
-
-    return parsedLeaderboard
-      .filter(isLeaderboardEntry)
-      .map((entry) => ({
-        ...entry,
-        // Clamp on read: a hand-crafted localStorage entry must not be able
-        // to render an unbounded name.
-        name: clipName(entry.name) || 'Anonymous',
-      }))
-      .sort((left, right) => left.timeMs - right.timeMs)
-      .slice(0, MAX_LEADERBOARD_ENTRIES)
-  } catch {
-    return []
-  }
-}
-
-function writeLeaderboard(eventFeet: number, entries: Array<LeaderboardEntry>) {
-  if (typeof window === 'undefined') {
-    return
-  }
-
-  try {
-    window.localStorage.setItem(
-      leaderboardKey(eventFeet),
-      JSON.stringify(entries),
-    )
-  } catch {
-    return
-  }
-}
-
-// splitsMs stays optional: entries saved before telemetry existed are still
-// valid and fall back to linear pace for the ghost.
-function isLeaderboardEntry(value: unknown): value is LeaderboardEntry {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  const entry = value as Record<string, unknown>
-
-  return (
-    typeof entry.id === 'string' &&
-    typeof entry.name === 'string' &&
-    typeof entry.timeMs === 'number' &&
-    Number.isFinite(entry.timeMs) &&
-    typeof entry.completedAt === 'string' &&
-    (entry.splitsMs === undefined ||
-      (Array.isArray(entry.splitsMs) &&
-        entry.splitsMs.every((split) => typeof split === 'number')))
-  )
-}
-
-function readPb(eventFeet: number): number | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
-
-  try {
-    const raw =
-      window.localStorage.getItem(pbKey(eventFeet)) ??
-      (eventFeet === DEFAULT_EVENT_FEET
-        ? window.localStorage.getItem(LEGACY_PB_KEY)
-        : null)
-    const value = raw === null ? Number.NaN : Number(raw)
-
-    return Number.isFinite(value) && value > 0 ? value : null
-  } catch {
-    return null
-  }
-}
-
-function writePb(eventFeet: number, timeMs: number) {
-  try {
-    window.localStorage.setItem(pbKey(eventFeet), String(timeMs))
-  } catch {
-    return
-  }
-}
-
-function readStoredEventFeet() {
-  if (typeof window === 'undefined') {
-    return DEFAULT_EVENT_FEET
-  }
-
-  try {
-    return (
-      parseEventFeet(window.localStorage.getItem(EVENT_STORAGE_KEY)) ??
-      DEFAULT_EVENT_FEET
-    )
-  } catch {
-    return DEFAULT_EVENT_FEET
-  }
-}
-
-function writeStoredEventFeet(eventFeet: number) {
-  try {
-    window.localStorage.setItem(EVENT_STORAGE_KEY, String(eventFeet))
-  } catch {
-    return
-  }
-}
-
-// Coarse device class for leaderboard metadata — never anything
-// fingerprint-y, just enough for "set on an iPhone" context.
-function detectDevice() {
-  if (typeof navigator === 'undefined') {
-    return 'Unknown'
-  }
-
-  const ua = navigator.userAgent
-
-  if (/iPhone/i.test(ua)) {
-    return 'iPhone'
-  }
-
-  if (
-    /iPad/i.test(ua) ||
-    (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
-  ) {
-    return 'iPad'
-  }
-
-  if (/Android/i.test(ua)) {
-    return 'Android'
-  }
-
-  if (/Windows/i.test(ua)) {
-    return 'Windows'
-  }
-
-  if (/Macintosh/i.test(ua)) {
-    return 'Mac'
-  }
-
-  return 'Other'
-}
-
-function readStoredName() {
-  if (typeof window === 'undefined') {
-    return ''
-  }
-
-  try {
-    return sanitizeName(window.localStorage.getItem(NAME_STORAGE_KEY) ?? '')
-  } catch {
-    return ''
-  }
-}
-
-function writeStoredName(name: string) {
-  try {
-    window.localStorage.setItem(NAME_STORAGE_KEY, name)
-  } catch {
-    return
-  }
-}
-
-function readStreak(): StreakData {
-  const fallback: StreakData = {
-    lastDay: '',
-    streak: 0,
-    prevStreak: 0,
-    todayBestMs: null,
-  }
-
-  if (typeof window === 'undefined') {
-    return fallback
-  }
-
-  try {
-    const raw = window.localStorage.getItem(STREAK_STORAGE_KEY)
-
-    if (!raw) {
-      return fallback
-    }
-
-    const parsed: unknown = JSON.parse(raw)
-
-    if (!parsed || typeof parsed !== 'object') {
-      return fallback
-    }
-
-    const data = parsed as Record<string, unknown>
-
-    return {
-      lastDay: typeof data.lastDay === 'string' ? data.lastDay : '',
-      streak: typeof data.streak === 'number' ? data.streak : 0,
-      prevStreak: typeof data.prevStreak === 'number' ? data.prevStreak : 0,
-      todayBestMs:
-        typeof data.todayBestMs === 'number' ? data.todayBestMs : null,
-    }
-  } catch {
-    return fallback
-  }
-}
-
-function writeStreak(data: StreakData) {
-  try {
-    window.localStorage.setItem(STREAK_STORAGE_KEY, JSON.stringify(data))
-  } catch {
-    return
-  }
-}
-
-function updateStreakOnFinish(timeMs: number) {
-  const today = localDay(0)
-  const yesterday = localDay(-1)
-  const current = readStreak()
-  let streak: number
-  let prevStreak = current.prevStreak
-  let firstOfDay = false
-  let newDailyBest = false
-  let todayBestMs: number | null
-
-  if (current.lastDay === today) {
-    streak = Math.max(current.streak, 1)
-    newDailyBest = current.todayBestMs !== null && timeMs < current.todayBestMs
-    todayBestMs =
-      current.todayBestMs === null
-        ? timeMs
-        : Math.min(current.todayBestMs, timeMs)
-  } else {
-    firstOfDay = true
-    todayBestMs = timeMs
-
-    if (current.lastDay === yesterday) {
-      streak = current.streak + 1
-    } else {
-      prevStreak = current.streak
-      streak = 1
-    }
-  }
-
-  writeStreak({ lastDay: today, streak, prevStreak, todayBestMs })
-
-  return { streak, firstOfDay, newDailyBest }
-}
-
-function readRunCount() {
-  if (typeof window === 'undefined') {
-    return 0
-  }
-
-  try {
-    const value = Number(window.localStorage.getItem(RUNS_STORAGE_KEY))
-
-    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
-  } catch {
-    return 0
-  }
-}
-
-function bumpRunCount() {
-  const next = readRunCount() + 1
-
-  try {
-    window.localStorage.setItem(RUNS_STORAGE_KEY, String(next))
-  } catch {
-    return next
-  }
-
-  return next
-}
-
-function readSessionNoPbRuns() {
-  try {
-    const value = Number(window.sessionStorage.getItem(SESSION_NO_PB_KEY))
-
-    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
-  } catch {
-    return 0
-  }
-}
-
-function writeSessionNoPbRuns(count: number) {
-  try {
-    window.sessionStorage.setItem(SESSION_NO_PB_KEY, String(count))
-  } catch {
-    return
-  }
-}
-
 function getMaxScroll() {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return 0
   }
 
   return Math.max(document.documentElement.scrollHeight - window.innerHeight, 0)
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max)
-}
-
-export function normalizePixelsPerInch(value: number) {
-  if (!Number.isFinite(value)) {
-    return CSS_PIXELS_PER_INCH
-  }
-
-  return Math.round(clamp(value, MIN_PIXELS_PER_INCH, MAX_PIXELS_PER_INCH))
-}
-
-function createEntryId() {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID()
-  }
-
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }

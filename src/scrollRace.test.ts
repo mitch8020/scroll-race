@@ -18,7 +18,7 @@ import {
   timeAtPercent,
   unitLine,
 } from './lib/race'
-import { createRulerTicks, normalizePixelsPerInch } from './routes'
+import { createRulerTicks, normalizePixelsPerInch } from './lib/course'
 
 describe('scroll race helpers', () => {
   it('formats sprint times with hundredths of a second', () => {
