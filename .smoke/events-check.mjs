@@ -91,8 +91,7 @@ await chal.waitForTimeout(1500)
 await chal.screenshot({ path: OUT + 'v2-challenge-250.png' })
 const slip = await chal.evaluate(() => ({
   slip: document.querySelector('.challengeSlipBody')?.textContent ?? null,
-  startLabel:
-    document.querySelector('.startBtn')?.textContent ?? null,
+  startLabel: document.querySelector('.startBtn')?.textContent ?? null,
   selected:
     document.querySelector('.eventOption.isSelected strong')?.textContent ??
     null,

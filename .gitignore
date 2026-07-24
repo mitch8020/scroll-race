@@ -17,3 +17,5 @@ todos.json
 
 # Playwright smoke-test output
 .smoke/shots
+.smoke/readiness-evidence
+.readiness-runtime

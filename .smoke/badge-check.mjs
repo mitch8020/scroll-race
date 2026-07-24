@@ -30,7 +30,12 @@ const badges = await page.evaluate(() => ({
     if (!el) return null
     const cs = getComputedStyle(el)
     const rect = el.getBoundingClientRect()
-    return { opacity: cs.opacity, display: cs.display, top: rect.top, height: rect.height }
+    return {
+      opacity: cs.opacity,
+      display: cs.display,
+      top: rect.top,
+      height: rect.height,
+    }
   })(),
   resultTime: document.querySelector('.resultTime')?.textContent ?? null,
 }))

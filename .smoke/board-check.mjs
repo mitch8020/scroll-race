@@ -26,10 +26,46 @@ await page.route('**/api/leaderboard*', async (route) => {
       contentType: 'application/json',
       body: JSON.stringify({
         entries: [
-          { id: '1', name: 'Turbo Thumb', timeMs: 2310, eventFeet: 100, device: 'iPhone', ppi: 180, country: 'US', completedAt: '' },
-          { id: '2', name: 'JP', timeMs: 2980, eventFeet: 100, device: 'Android', ppi: 96, country: 'KR', completedAt: '' },
-          { id: '3', name: 'Wobbly Gazelle', timeMs: 3450, eventFeet: 100, device: 'Mac', ppi: 96, country: 'DE', completedAt: '' },
-          { id: '4', name: 'Sneaky Ferret', timeMs: 4810, eventFeet: 100, device: 'Windows', ppi: 110, country: 'BR', completedAt: '' },
+          {
+            id: '1',
+            name: 'Turbo Thumb',
+            timeMs: 2310,
+            eventFeet: 100,
+            device: 'iPhone',
+            ppi: 180,
+            country: 'US',
+            completedAt: '',
+          },
+          {
+            id: '2',
+            name: 'JP',
+            timeMs: 2980,
+            eventFeet: 100,
+            device: 'Android',
+            ppi: 96,
+            country: 'KR',
+            completedAt: '',
+          },
+          {
+            id: '3',
+            name: 'Wobbly Gazelle',
+            timeMs: 3450,
+            eventFeet: 100,
+            device: 'Mac',
+            ppi: 96,
+            country: 'DE',
+            completedAt: '',
+          },
+          {
+            id: '4',
+            name: 'Sneaky Ferret',
+            timeMs: 4810,
+            eventFeet: 100,
+            device: 'Windows',
+            ppi: 110,
+            country: 'BR',
+            completedAt: '',
+          },
         ],
         total: 1287,
       }),
@@ -83,7 +119,9 @@ console.log('savedNote:', JSON.stringify(savedNote))
 await page.screenshot({ path: OUT + 'board-saved-rank.png' })
 
 // Unreachable-API fallback: new context without the mock
-const fallback = await browser.newPage({ viewport: { width: 390, height: 844 } })
+const fallback = await browser.newPage({
+  viewport: { width: 390, height: 844 },
+})
 await fallback.route('**/api/leaderboard*', (route) => route.abort())
 await fallback.goto('http://localhost:3000/')
 await fallback.waitForTimeout(1600)
