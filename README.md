@@ -9,6 +9,12 @@ npm install
 npm run dev
 ```
 
+## Production readiness
+
+The complete local production-readiness inventory, synthetic scale-data
+profile, acceptance criteria, bug log, and reproducible browser campaign live
+in [`docs/production-readiness`](./docs/production-readiness/README.md).
+
 # Building For Production
 
 To build this application for production:
