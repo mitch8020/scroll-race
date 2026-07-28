@@ -295,7 +295,9 @@ async function scrollLegitimateRace(page, eventFeet) {
 
 async function startAndSkipCountdown(page) {
   await page
-    .getByRole('button', { name: /start race|race again|beat /i })
+    .getByRole('button', {
+      name: /start race|race again|run it back|one more|beat /i,
+    })
     .click()
   await expectVisible(
     page.getByText('Get ready'),
@@ -789,6 +791,28 @@ await scenario(
         'Local boards stay capped at ten entries',
       )
 
+      if (eventFeet === 100) {
+        await startAndSkipCountdown(page)
+        await scrollLegitimateRace(page, eventFeet)
+        await page.locator('.savedNote').waitFor()
+
+        const repeatedPlayerRows = await page.evaluate((feet) => {
+          const rows = JSON.parse(
+            localStorage.getItem(`scroll-race-leaderboard-v2-${feet}`),
+          )
+
+          return rows.filter(
+            (entry) => entry.name.trim().toLowerCase() === 'synthetic tester',
+          ).length
+        }, eventFeet)
+
+        assert.equal(
+          repeatedPlayerRows,
+          1,
+          'A returning player should keep exactly one local leaderboard row',
+        )
+      }
+
       if (eventFeet === 100 || eventFeet === 1000) {
         await screenshot(page, `finish-${eventFeet}`)
       }
@@ -803,7 +827,7 @@ await scenario(
 
     assert.deepEqual(
       submissions.map((submission) => submission.eventFeet),
-      EVENTS,
+      [100, ...EVENTS],
     )
     assert.ok(
       submissions.every(
