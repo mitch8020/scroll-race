@@ -2,7 +2,11 @@
 // failures and returns null — the game never blocks on the network.
 
 import type { GlobalEntry } from './board'
-import { GLOBAL_BOARD_PAGE, isGlobalEntryLike } from './board'
+import {
+  GLOBAL_BOARD_PAGE,
+  isGlobalEntryLike,
+  rankGlobalEntries,
+} from './board'
 import { sanitizeName } from './race'
 
 const API_PATH = '/api/leaderboard'
@@ -42,20 +46,11 @@ export function parseGlobalBoardResponse(
     return null
   }
 
-  const seenIds = new Set<string>()
-  const entries = body.entries
-    .filter(isGlobalEntryLike)
-    .filter((entry) => entry.eventFeet === eventFeet)
-    .sort((left, right) => left.timeMs - right.timeMs)
-    .filter((entry) => {
-      if (seenIds.has(entry.id)) {
-        return false
-      }
-
-      seenIds.add(entry.id)
-
-      return true
-    })
+  const entries = rankGlobalEntries(
+    body.entries
+      .filter(isGlobalEntryLike)
+      .filter((entry) => entry.eventFeet === eventFeet),
+  )
     .slice(0, GLOBAL_BOARD_PAGE)
     // Never trust the wire: normalize every rendered field.
     .map((entry) => ({

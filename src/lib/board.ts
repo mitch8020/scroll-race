@@ -6,6 +6,7 @@ import {
   MAX_CHALLENGE_MS,
   MIN_LEGIT_MS_PER_FOOT,
   PERCENT_STEPS,
+  leaderboardNameKey,
   parseEventFeet,
   randomRacerName,
   sanitizeName,
@@ -141,11 +142,11 @@ export function insertEntry(
   board: GlobalBoard | null,
   entry: GlobalEntry,
 ): { board: GlobalBoard; rank: number | null } {
-  const eligibleEntries = (board?.entries ?? []).filter(isGlobalEntryLike)
-  const entries = [...eligibleEntries, entry].sort(
-    (left, right) => left.timeMs - right.timeMs,
+  const entries = rankGlobalEntries([...(board?.entries ?? []), entry])
+  const playerKey = leaderboardNameKey(entry.name)
+  const index = entries.findIndex(
+    (candidate) => leaderboardNameKey(candidate.name) === playerKey,
   )
-  const index = entries.findIndex((candidate) => candidate.id === entry.id)
 
   return {
     board: {
@@ -154,6 +155,33 @@ export function insertEntry(
     },
     rank: index < GLOBAL_BOARD_LIMIT ? index + 1 : null,
   }
+}
+
+// Every event board holds one fastest row per sanitized, case-insensitive
+// player name. Sorting first makes this both a historical cleanup and an
+// upsert rule: a slower repeat is discarded, while a faster repeat replaces
+// the old row. IDs are also unique as a defensive storage boundary.
+export function rankGlobalEntries(
+  values: ReadonlyArray<unknown>,
+): Array<GlobalEntry> {
+  const seenIds = new Set<string>()
+  const seenPlayers = new Set<string>()
+
+  return values
+    .filter(isGlobalEntryLike)
+    .sort((left, right) => left.timeMs - right.timeMs)
+    .filter((entry) => {
+      const playerKey = leaderboardNameKey(entry.name)
+
+      if (seenIds.has(entry.id) || seenPlayers.has(playerKey)) {
+        return false
+      }
+
+      seenIds.add(entry.id)
+      seenPlayers.add(playerKey)
+
+      return true
+    })
 }
 
 // Defensive parse of whatever the API hands back — the client never trusts

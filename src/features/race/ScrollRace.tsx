@@ -32,8 +32,10 @@ import {
   fasterThanPercent,
   formatTime,
   ftpsToMph,
+  leaderboardNameKey,
   randomRacerName,
   rankTitle,
+  sanitizeName,
   speedTicketLine,
   unitLine,
 } from '../../lib/race'
@@ -41,10 +43,10 @@ import { SUBMIT_COOLDOWN_MS } from '../../lib/board'
 import { fetchGlobalBoard, submitToGlobalBoard } from '../../lib/globalBoard'
 import type { LeaderboardEntry } from '../../lib/localRaceStore'
 import {
-  MAX_LEADERBOARD_ENTRIES,
   createEntryId,
   detectDevice,
   getStreakRecency,
+  rankLeaderboard,
   readLeaderboard,
   readPixelsPerInch,
   readRunCount,
@@ -370,7 +372,7 @@ export function ScrollRace({
       const entry: LeaderboardEntry = {
         id: createEntryId(),
         // Skipping the form earns a deadpan bib name, not "Anonymous".
-        name: clipName(name.trim()) || randomRacerName(),
+        name: sanitizeName(name) || randomRacerName(),
         timeMs: lastResult.timeMs,
         completedAt: new Date().toISOString(),
         splitsMs: lastResult.splitsMs,
@@ -378,17 +380,19 @@ export function ScrollRace({
         ppi: pixelsPerInch,
         device: detectDevice(),
       }
-      const nextLeaderboard = [...leaderboard, entry]
-        .sort((left, right) => left.timeMs - right.timeMs)
-        .slice(0, MAX_LEADERBOARD_ENTRIES)
+      const nextLeaderboard = rankLeaderboard([...leaderboard, entry])
+      const savedEntry = nextLeaderboard.find(
+        (candidate) =>
+          leaderboardNameKey(candidate.name) === leaderboardNameKey(entry.name),
+      )
 
       setLeaderboard(nextLeaderboard)
       writeLeaderboard(lastResult.eventFeet, nextLeaderboard)
       setHasSaved(true)
-      setLastSavedId(entry.id)
-      setSavedName(entry.name)
-      setPlayerName(entry.name)
-      writeStoredName(entry.name)
+      setLastSavedId(savedEntry?.id ?? null)
+      setSavedName(savedEntry?.name ?? entry.name)
+      setPlayerName(savedEntry?.name ?? entry.name)
+      writeStoredName(savedEntry?.name ?? entry.name)
 
       // Saving publishes to the world board too (once per result). The form
       // copy discloses this; wind-assisted runs never reach saveEntry. A
@@ -526,16 +530,22 @@ export function ScrollRace({
     const trimmed = clipName(playerName.trim())
 
     if (hasSaved && lastSavedId) {
-      const name = trimmed || randomRacerName()
-      const nextLeaderboard = leaderboard.map((entry) =>
-        entry.id === lastSavedId ? { ...entry, name } : entry,
+      const name = sanitizeName(trimmed) || randomRacerName()
+      const nextLeaderboard = rankLeaderboard(
+        leaderboard.map((entry) =>
+          entry.id === lastSavedId ? { ...entry, name } : entry,
+        ),
+      )
+      const renamedEntry = nextLeaderboard.find(
+        (entry) => leaderboardNameKey(entry.name) === leaderboardNameKey(name),
       )
 
       setLeaderboard(nextLeaderboard)
       writeLeaderboard(lastResult.eventFeet, nextLeaderboard)
-      setSavedName(name)
-      setPlayerName(name)
-      writeStoredName(name)
+      setLastSavedId(renamedEntry?.id ?? null)
+      setSavedName(renamedEntry?.name ?? name)
+      setPlayerName(renamedEntry?.name ?? name)
+      writeStoredName(renamedEntry?.name ?? name)
       setEditingName(false)
 
       return

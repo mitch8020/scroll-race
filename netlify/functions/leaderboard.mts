@@ -14,7 +14,7 @@ import {
   GLOBAL_BOARD_PAGE,
   SUBMIT_COOLDOWN_MS,
   insertEntry,
-  isGlobalEntryLike,
+  rankGlobalEntries,
   validateSubmission,
 } from '../../src/lib/board'
 import { parseEventFeet } from '../../src/lib/race'
@@ -77,9 +77,10 @@ export default async function handler(request: Request, context: Context) {
     return json(
       200,
       {
-        entries: (board?.entries ?? [])
-          .filter(isGlobalEntryLike)
-          .slice(0, GLOBAL_BOARD_PAGE),
+        entries: rankGlobalEntries(board?.entries ?? []).slice(
+          0,
+          GLOBAL_BOARD_PAGE,
+        ),
         total: board?.total ?? 0,
       },
       // Uncached: the intro refetch after a race must show the run the

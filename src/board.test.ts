@@ -199,6 +199,25 @@ describe('board insertion', () => {
     ])
     expect(result.rank).toBe(1)
   })
+
+  it('keeps only the fastest row for a player name, case-insensitively', () => {
+    const first = insertEntry(null, { ...entry('first', 5_000), name: 'JP' })
+    const faster = insertEntry(first.board, {
+      ...entry('faster', 4_000),
+      name: ' jp ',
+    })
+    const slower = insertEntry(faster.board, {
+      ...entry('slower', 6_000),
+      name: 'JP',
+    })
+
+    expect(faster.rank).toBe(1)
+    expect(slower.rank).toBe(1)
+    expect(slower.board.entries).toEqual([
+      expect.objectContaining({ id: 'faster', name: ' jp ', timeMs: 4_000 }),
+    ])
+    expect(slower.board.total).toBe(3)
+  })
 })
 
 // Integration: the actual function handler against an in-memory Blobs mock.
@@ -287,6 +306,53 @@ describe('leaderboard function', () => {
       eventFeet: 100,
       country: 'US',
     })
+  })
+
+  it('keeps one worldwide row per player name and returns its best rank', async () => {
+    await post(
+      goodSubmission({
+        name: 'JP',
+        timeMs: 4_200,
+        splitsMs: goodSplits(4_200),
+      }),
+      '198.51.100.11',
+    )
+    await post(
+      goodSubmission({
+        name: 'Rival',
+        timeMs: 4_100,
+        splitsMs: goodSplits(4_100),
+      }),
+      '198.51.100.12',
+    )
+    const faster = await post(
+      goodSubmission({
+        name: ' jp ',
+        timeMs: 4_000,
+        splitsMs: goodSplits(4_000),
+      }),
+      '198.51.100.13',
+    )
+    const slower = await post(
+      goodSubmission({
+        name: 'JP',
+        timeMs: 4_300,
+        splitsMs: goodSplits(4_300),
+      }),
+      '198.51.100.14',
+    )
+
+    expect(await faster.json()).toMatchObject({ rank: 1, total: 3 })
+    expect(await slower.json()).toMatchObject({ rank: 1, total: 4 })
+
+    const board = await (await get('100')).json()
+
+    expect(board.total).toBe(4)
+    expect(board.entries).toHaveLength(2)
+    expect(board.entries).toEqual([
+      expect.objectContaining({ name: 'jp', timeMs: 4_000 }),
+      expect.objectContaining({ name: 'Rival', timeMs: 4_100 }),
+    ])
   })
 
   it('rejects invalid submissions with 422', async () => {

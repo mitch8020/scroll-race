@@ -67,7 +67,7 @@ describe('global board response boundary', () => {
     })
   })
 
-  it('de-duplicates ids and clamps decimal totals to whole runs', () => {
+  it('de-duplicates ids and player names and clamps totals to whole runs', () => {
     const entry = {
       id: 'same',
       name: 'Synthetic',
@@ -78,11 +78,23 @@ describe('global board response boundary', () => {
 
     expect(
       parseGlobalBoardResponse(
-        { entries: [entry, { ...entry, timeMs: 3_100 }], total: 9.9 },
+        {
+          entries: [
+            entry,
+            { ...entry, timeMs: 3_100 },
+            {
+              ...entry,
+              id: 'faster-name',
+              name: ' synthetic ',
+              timeMs: 2_900,
+            },
+          ],
+          total: 9.9,
+        },
         100,
       ),
     ).toMatchObject({
-      entries: [{ timeMs: 3_000 }],
+      entries: [{ id: 'faster-name', timeMs: 2_900 }],
       total: 9,
     })
   })

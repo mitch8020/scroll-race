@@ -2,7 +2,7 @@ import { CSS_PIXELS_PER_INCH, normalizePixelsPerInch } from './course'
 import { classifyDevice, isMobileDeviceClass } from './device'
 import {
   DEFAULT_EVENT_FEET,
-  clipName,
+  leaderboardNameKey,
   parseEventFeet,
   sanitizeName,
 } from './race'
@@ -133,19 +133,40 @@ export function readLeaderboard(eventFeet: number): Array<LeaderboardEntry> {
       return []
     }
 
-    return parsedLeaderboard
-      .filter(isLeaderboardEntry)
-      .map((entry) => ({
-        ...entry,
-        // Clamp on read: a hand-crafted localStorage entry must not be able
-        // to render an unbounded name.
-        name: clipName(entry.name) || 'Anonymous',
-      }))
-      .sort((left, right) => left.timeMs - right.timeMs)
-      .slice(0, MAX_LEADERBOARD_ENTRIES)
+    return rankLeaderboard(parsedLeaderboard.filter(isLeaderboardEntry))
   } catch {
     return []
   }
+}
+
+// The device board follows the same identity rule as the world board: one
+// fastest row per sanitized, case-insensitive name. Applying it on reads,
+// writes, saves, and renames also migrates historical duplicate rows.
+export function rankLeaderboard(
+  entries: ReadonlyArray<LeaderboardEntry>,
+): Array<LeaderboardEntry> {
+  const seenPlayers = new Set<string>()
+
+  return entries
+    .map((entry) => ({
+      ...entry,
+      // Clamp and sanitize on the persistence boundary so the local and
+      // worldwide boards compare and display the same player name.
+      name: sanitizeName(entry.name) || 'Anonymous',
+    }))
+    .sort((left, right) => left.timeMs - right.timeMs)
+    .filter((entry) => {
+      const playerKey = leaderboardNameKey(entry.name)
+
+      if (seenPlayers.has(playerKey)) {
+        return false
+      }
+
+      seenPlayers.add(playerKey)
+
+      return true
+    })
+    .slice(0, MAX_LEADERBOARD_ENTRIES)
 }
 
 export function writeLeaderboard(
@@ -159,7 +180,10 @@ export function writeLeaderboard(
   }
 
   try {
-    storage.setItem(leaderboardKey(eventFeet), JSON.stringify(entries))
+    storage.setItem(
+      leaderboardKey(eventFeet),
+      JSON.stringify(rankLeaderboard(entries.filter(isLeaderboardEntry))),
+    )
   } catch {
     return
   }

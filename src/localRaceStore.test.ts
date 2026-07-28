@@ -12,6 +12,7 @@ import {
   readStoredEventFeet,
   readStoredName,
   readStreak,
+  rankLeaderboard,
   updateStreakOnFinish,
   writePixelsPerInch,
   writeSessionNoPbRuns,
@@ -142,6 +143,34 @@ describe('local race store', () => {
     expect(readLeaderboard(100).map((entry) => entry.id)).toEqual([
       'phone',
       'legacy',
+    ])
+  })
+
+  it('keeps only the fastest local row for each player name', () => {
+    const board = rankLeaderboard([
+      {
+        id: 'slow',
+        name: 'JP',
+        timeMs: 5_000,
+        completedAt: '2026-07-23T00:00:00.000Z',
+      },
+      {
+        id: 'other',
+        name: 'Rival',
+        timeMs: 4_500,
+        completedAt: '2026-07-23T00:00:01.000Z',
+      },
+      {
+        id: 'fast',
+        name: ' jp ',
+        timeMs: 4_000,
+        completedAt: '2026-07-23T00:00:02.000Z',
+      },
+    ])
+
+    expect(board).toEqual([
+      expect.objectContaining({ id: 'fast', name: 'jp', timeMs: 4_000 }),
+      expect.objectContaining({ id: 'other', name: 'Rival', timeMs: 4_500 }),
     ])
   })
 

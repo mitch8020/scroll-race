@@ -161,6 +161,16 @@ export function sanitizeName(raw: string) {
   )
 }
 
+// A display name is the only player identity available on the anonymous
+// leaderboards. Normalize it for comparisons so casing, Unicode presentation,
+// or extra spaces cannot create duplicate rows for the same visible player.
+export function leaderboardNameKey(raw: string) {
+  return (sanitizeName(raw) || 'Racer')
+    .normalize('NFKC')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+}
+
 // Deadpan race-official bib names for players who skip the form. Both lists
 // are curated so every combination fits the 18-character name budget.
 const NAME_FIRSTS = [
